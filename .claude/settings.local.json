@@ -12,7 +12,8 @@
       "Bash(PYTHONPATH=/home/sudahang/Documents/github/FinAna ./venv/bin/python web_ui/app.py 2>&1)",
       "Bash(netstat -tlnp 2>/dev/null | grep 7860 || ss -tlnp | grep 7860)",
       "Bash(curl -s http://localhost:7860 2>&1 | head -20)",
-      "Bash(curl -s http://localhost:7860 2>&1 | head -50)"
+      "Bash(curl -s http://localhost:7860 2>&1 | head -50)",
+      "Bash(PYTHONPATH=. ./venv/bin/python -c \"from llm.client import LLMClient; from data.finance_data import FinancialDataFetcher; print\\('Import test passed'\\)\" 2>&1)"
     ]
   }
 }

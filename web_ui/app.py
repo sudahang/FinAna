@@ -1,7 +1,12 @@
 """Gradio web UI for FinAna - Modern Design."""
 
 import gradio as gr
-from workflows.research_workflow import ResearchWorkflow
+from workflows.ai_research_workflow import AIResearchWorkflow
+from dotenv import load_dotenv
+import os
+
+# Load environment variables
+load_dotenv()
 
 # Custom CSS for modern design
 CUSTOM_CSS = """
@@ -220,14 +225,39 @@ def run_analysis(query: str) -> str:
 """
 
     try:
-        workflow = ResearchWorkflow()
+        # Check if API key is configured
+        api_key = os.getenv("DASHSCOPE_API_KEY")
+        if not api_key:
+            return """
+<div style="background: #fff3cd; padding: 20px; border-radius: 12px; border-left: 4px solid #ffc107;">
+    <strong>⚠️ 配置提示</strong>
+    <p style="margin: 10px 0 0 0; color: #856404;">
+        请先配置 DASHSCOPE_API_KEY 环境变量以使用 AI 分析功能。
+        <br><br>
+        1. 访问 <a href="https://dashscope.console.aliyun.com/" target="_blank">DashScope 控制台</a> 获取 API Key
+        <br>
+        2. 将 .env.example 复制为 .env 并填入 API Key
+        <br>
+        3. 重启服务
+    </p>
+</div>
+"""
+
+        workflow = AIResearchWorkflow()
         report = workflow.execute(query)
         return report.full_report
+
     except Exception as e:
         return f"""
 <div style="background: #f8d7da; padding: 20px; border-radius: 12px; border-left: 4px solid #dc3545;">
     <strong>❌ 生成报告时出错</strong>
     <p style="margin: 10px 0 0 0; color: #721c24;">{str(e)}</p>
+    <p style="margin: 10px 0 0 0; font-size: 13px; color: #721c24;">
+        请检查：<br>
+        1. DASHSCOPE_API_KEY 是否正确配置<br>
+        2. 网络连接是否正常<br>
+        3. API 账户是否有足够额度
+    </p>
 </div>
 """
 
