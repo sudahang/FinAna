@@ -16,8 +16,9 @@ class DashScopeConfig(BaseModel):
     api_key: str
     base_url: str = "https://coding.dashscope.aliyuncs.com/v1"
     model: str = "qwen3.5-plus"
-    max_tokens: int = 4096
+    max_tokens: int = 2048
     temperature: float = 0.7
+    timeout: int = 30
 
 
 class LLMClient:
@@ -86,7 +87,7 @@ class LLMClient:
             response = self.session.post(
                 f"{self.config.base_url}/chat/completions",
                 json=payload,
-                timeout=60
+                timeout=self.config.timeout
             )
             response.raise_for_status()
             result = response.json()
@@ -132,7 +133,7 @@ class LLMClient:
             response = self.session.post(
                 f"{self.config.base_url}/chat/completions",
                 json=payload,
-                timeout=60
+                timeout=self.config.timeout
             )
             response.raise_for_status()
             result = response.json()

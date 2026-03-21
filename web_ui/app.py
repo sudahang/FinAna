@@ -248,16 +248,27 @@ def run_analysis(query: str) -> str:
         return report.full_report
 
     except Exception as e:
+        # Return a more user-friendly error message
+        error_msg = str(e)
+        if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+            return """
+<div style="background: #f8d7da; padding: 20px; border-radius: 12px; border-left: 4px solid #dc3545;">
+    <strong>❌ 请求超时</strong>
+    <p style="margin: 10px 0 0 0; color: #721c24;">
+        AI 分析请求超时，请稍后重试。
+    </p>
+    <p style="margin: 10px 0 0 0; font-size: 13px; color: #721c24;">
+        建议：<br>
+        1. 检查网络连接<br>
+        2. 确认 API Key 有效且有足够额度<br>
+        3. 稍后重试
+    </p>
+</div>
+"""
         return f"""
 <div style="background: #f8d7da; padding: 20px; border-radius: 12px; border-left: 4px solid #dc3545;">
     <strong>❌ 生成报告时出错</strong>
-    <p style="margin: 10px 0 0 0; color: #721c24;">{str(e)}</p>
-    <p style="margin: 10px 0 0 0; font-size: 13px; color: #721c24;">
-        请检查：<br>
-        1. DASHSCOPE_API_KEY 是否正确配置<br>
-        2. 网络连接是否正常<br>
-        3. API 账户是否有足够额度
-    </p>
+    <p style="margin: 10px 0 0 0; color: #721c24;">{error_msg}</p>
 </div>
 """
 
@@ -394,18 +405,20 @@ def create_demo() -> gr.Blocks:
         </div>
         """)
 
-        # Set up click handler
+        # Set up click handler with queue support
         analyze_btn.click(
             fn=run_analysis,
             inputs=query_input,
-            outputs=report_output
+            outputs=report_output,
+            show_progress="full"
         )
 
         # Handle enter key
         query_input.submit(
             fn=run_analysis,
             inputs=query_input,
-            outputs=report_output
+            outputs=report_output,
+            show_progress="full"
         )
 
     return demo
@@ -414,6 +427,7 @@ def create_demo() -> gr.Blocks:
 def launch():
     """Launch the Gradio application."""
     demo = create_demo()
+    demo.queue(max_size=10)
     demo.launch(
         server_name="0.0.0.0",
         server_port=7860,
