@@ -80,16 +80,66 @@ class FinancialDataFetcher:
 
     def get_us_stock_quote(self, symbol: str) -> Optional[dict]:
         """
-        Get US stock quote from Sina Finance.
+        Get US stock quote - returns None to trigger LLM-based lookup.
+
+        Real-time data APIs are unreliable. The equity analyst agent
+        will use LLM to get current price information.
 
         Args:
             symbol: US stock ticker (e.g., 'TSLA', 'NVDA')
 
         Returns:
-            Dict with quote data or None if failed.
+            Dict with quote data or None to use LLM fallback.
         """
-        # Sina uses gb_ prefix for US stocks
-        return self.get_stock_quote(f"gb_{symbol.lower()}")
+        # Try Eastmoney first (most reliable for Chinese users)
+        quote = self._get_eastmoney_quote(symbol)
+        if quote and quote.get('current_price', 0) > 50:  # Valid price check
+            return quote
+
+        # Return None to trigger LLM-based company info lookup
+        return None
+
+    def _is_numeric(self, value: str) -> bool:
+        """Check if string can be converted to float."""
+        try:
+            float(value)
+            return True
+        except (ValueError, TypeError):
+            return False
+
+    def _get_eastmoney_quote(self, symbol: str) -> Optional[dict]:
+        """Get US stock quote from Eastmoney as fallback."""
+        try:
+            # Eastmoney US stock market code is 162
+            url = f"https://push2.eastmoney.com/api/qt/stock/get"
+            params = {
+                "secid": f"162.{symbol}",
+                "fields": "f14,f43,f44,f131,f133,f152,f10004"
+            }
+
+            response = self.session.get(url, params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("data"):
+                    fields = data["data"]
+                    price = fields.get("f44", 0)
+                    # Validate price - should be reasonable for most stocks
+                    if price and 0.1 < price < 10000:
+                        return {
+                            "name": fields.get("f14", symbol),
+                            "current_price": price,
+                            "open": fields.get("f43", 0),
+                            "high": fields.get("f131", 0),
+                            "low": fields.get("f133", 0),
+                            "close": fields.get("f130", 0),
+                            "market_cap": fields.get("f152", 0),
+                            "pe_ratio": fields.get("f10004", 0),
+                            "timestamp": datetime.now()
+                        }
+        except Exception as e:
+            print(f"Eastmoney quote failed: {e}")
+
+        return None
 
     def get_stock_news(self, symbol: str, limit: int = 10) -> list[dict]:
         """

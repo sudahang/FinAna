@@ -73,20 +73,66 @@ class EquityAnalystAgent:
             return self._fallback_analysis(company_data, news_data)
 
     def _build_company_data(self, symbol: str, quote_data: dict | None) -> CompanyData:
-        """Build CompanyData from quote."""
-        if quote_data:
+        """Build CompanyData from quote or LLM lookup."""
+        if quote_data and quote_data.get('current_price', 0) > 0:
             return CompanyData(
                 symbol=symbol,
                 name=quote_data.get('name', symbol),
-                sector="Technology",  # Will be updated later
-                market_cap=0,  # Will be fetched separately
-                pe_ratio=0,
+                sector="Technology",
+                market_cap=quote_data.get('market_cap', 0),
+                pe_ratio=quote_data.get('pe_ratio', 0),
                 current_price=quote_data.get('current_price', 0)
             )
         else:
-            # Fallback to mock data
-            from data.mock_data import get_mock_company_data
-            return get_mock_company_data(symbol)
+            # Use LLM to get company info when real data unavailable
+            return self._get_company_info_from_llm(symbol)
+
+    def _get_company_info_from_llm(self, symbol: str) -> CompanyData:
+        """Get company basic info using LLM knowledge."""
+        prompt = f"""请提供 {symbol} 股票的基本信息，以 JSON 格式输出：
+{{
+    "name": "公司全称",
+    "sector": "所属行业",
+    "current_price": 当前股价（数字）,
+    "pe_ratio": 市盈率（数字）,
+    "market_cap": 市值（亿美元，数字）
+}}
+
+只输出 JSON，不要其他文字。"""
+
+        try:
+            response = self.llm.chat(
+                messages=[{"role": "user", "content": prompt}],
+                system_prompt="你是一位专业的金融数据助手，提供准确的股票信息。"
+            )
+
+            # Parse JSON response
+            start_idx = response.find('{')
+            end_idx = response.rfind('}') + 1
+            if start_idx >= 0 and end_idx > start_idx:
+                json_str = response[start_idx:end_idx]
+                parsed = json.loads(json_str)
+
+                return CompanyData(
+                    symbol=symbol,
+                    name=parsed.get('name', symbol),
+                    sector=parsed.get('sector', 'Unknown'),
+                    market_cap=parsed.get('market_cap', 0),
+                    pe_ratio=parsed.get('pe_ratio', 0) or 0,
+                    current_price=parsed.get('current_price', 0) or 0
+                )
+        except Exception as e:
+            print(f"LLM company lookup failed: {e}")
+
+        # Ultimate fallback - use symbol as name
+        return CompanyData(
+            symbol=symbol,
+            name=symbol,
+            sector="Unknown",
+            market_cap=0,
+            pe_ratio=0,
+            current_price=0
+        )
 
     def _build_analysis_prompt(
         self,
