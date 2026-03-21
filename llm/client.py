@@ -4,14 +4,18 @@ import os
 import requests
 from typing import Optional
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 class DashScopeConfig(BaseModel):
     """DashScope API configuration."""
 
     api_key: str
-    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    model: str = "qwen-plus"
+    base_url: str = "https://coding.dashscope.aliyuncs.com/v1"
+    model: str = "qwen3.5-plus"
     max_tokens: int = 4096
     temperature: float = 0.7
 
