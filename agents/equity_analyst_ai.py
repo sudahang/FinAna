@@ -240,7 +240,7 @@ class EquityAnalystAgent:
         """Extract stock symbol from query."""
         query_upper = query.upper()
 
-        # Common US stock mappings
+        # Common US stock mappings (including Chinese names)
         company_mapping = {
             "特斯拉": "TSLA",
             "TSLA": "TSLA",
@@ -260,7 +260,29 @@ class EquityAnalystAgent:
             "AMAZON": "AMZN",
             "AMZN": "AMZN",
             "META": "META",
-            "FACEBOOK": "META"
+            "FACEBOOK": "META",
+            # Chinese concept stocks
+            "阿里巴巴": "BABA",
+            "ALIBABA": "BABA",
+            "BABA": "BABA",
+            "阿里": "BABA",
+            "拼多多": "PDD",
+            "PDD": "PDD",
+            "京东": "JD",
+            "JD": "JD",
+            "百度": "BIDU",
+            "BAIDU": "BIDU",
+            "BIDU": "BIDU",
+            "网易": "NTES",
+            "NETEASE": "NTES",
+            "NTES": "NTES",
+            "小鹏": "XPEV",
+            "XPENG": "XPEV",
+            "XPEV": "XPEV",
+            "理想": "LI",
+            "LI AUTO": "LI",
+            "蔚来": "NIO",
+            "NIO": "NIO"
         }
 
         for name, symbol in company_mapping.items():

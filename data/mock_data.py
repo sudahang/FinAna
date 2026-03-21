@@ -135,10 +135,70 @@ def get_mock_company_data(symbol: str) -> CompanyData:
             "market_cap": 1720.0,
             "pe_ratio": 24.8,
             "current_price": 138.20
+        },
+        "BABA": {
+            "name": "Alibaba Group Holding Limited",
+            "sector": "Consumer Discretionary",
+            "market_cap": 210.5,
+            "pe_ratio": 12.8,
+            "current_price": 78.50
+        },
+        "PDD": {
+            "name": "PDD Holdings Inc.",
+            "sector": "Consumer Discretionary",
+            "market_cap": 185.0,
+            "pe_ratio": 15.2,
+            "current_price": 125.30
+        },
+        "JD": {
+            "name": "JD.com, Inc.",
+            "sector": "Consumer Discretionary",
+            "market_cap": 52.5,
+            "pe_ratio": 10.5,
+            "current_price": 28.75
+        },
+        "BIDU": {
+            "name": "Baidu, Inc.",
+            "sector": "Technology",
+            "market_cap": 35.8,
+            "pe_ratio": 11.2,
+            "current_price": 98.40
+        },
+        "NIO": {
+            "name": "NIO Inc.",
+            "sector": "Automotive",
+            "market_cap": 15.2,
+            "pe_ratio": -5.8,
+            "current_price": 8.25
+        },
+        "XPEV": {
+            "name": "XPeng Inc.",
+            "sector": "Automotive",
+            "market_cap": 12.8,
+            "pe_ratio": -3.2,
+            "current_price": 14.60
+        },
+        "LI": {
+            "name": "Li Auto Inc.",
+            "sector": "Automotive",
+            "market_cap": 28.5,
+            "pe_ratio": 18.5,
+            "current_price": 28.90
         }
     }
 
-    data = company_data.get(symbol.upper(), company_data["TSLA"])
+    data = company_data.get(symbol.upper(), None)
+
+    if data is None:
+        # Generic fallback for unknown symbols
+        return CompanyData(
+            symbol=symbol.upper(),
+            name=symbol.upper(),
+            sector="Unknown",
+            market_cap=0,
+            pe_ratio=0,
+            current_price=0
+        )
 
     return CompanyData(
         symbol=symbol.upper(),
@@ -191,6 +251,54 @@ def get_mock_news(symbol: str) -> list[NewsItem]:
                 "source": "Bloomberg",
                 "sentiment": "negative",
                 "summary": "New semiconductor export controls could affect NVIDIA's revenue from Chinese market."
+            }
+        ],
+        "BABA": [
+            {
+                "title": "阿里巴巴云智能集团宣布 AI 大模型新进展",
+                "source": "科技日报",
+                "sentiment": "positive",
+                "summary": "阿里云发布通义千问新模型，企业应用能力显著提升。"
+            },
+            {
+                "title": "阿里电商业务面临拼多多激烈竞争",
+                "source": "财经网",
+                "sentiment": "neutral",
+                "summary": "拼多多 GMV 持续增长，阿里巴巴市场份额受到挑战。"
+            },
+            {
+                "title": "阿里巴巴回购计划提振投资者信心",
+                "source": "华尔街见闻",
+                "sentiment": "positive",
+                "summary": "公司宣布追加 250 亿美元股票回购计划，显示管理层对公司前景信心。"
+            }
+        ],
+        "PDD": [
+            {
+                "title": "拼多多 Temu 海外扩张加速",
+                "source": "晚点 LatePost",
+                "sentiment": "positive",
+                "summary": "Temu 进入多个欧洲市场，用户增长超预期。"
+            },
+            {
+                "title": "拼多多财报超预期，营收增长显著",
+                "source": "财新",
+                "sentiment": "positive",
+                "summary": "季度营收同比增长 58%，盈利能力持续提升。"
+            }
+        ],
+        "NIO": [
+            {
+                "title": "蔚来推出新品牌乐道，进军主流市场",
+                "source": "汽车之家",
+                "sentiment": "positive",
+                "summary": "乐道 L60 正式亮相，价格更具竞争力。"
+            },
+            {
+                "title": "蔚来换电站数量突破 2000 座",
+                "source": "第一电动",
+                "sentiment": "positive",
+                "summary": "充电基础设施持续完善，用户体验提升。"
             }
         ],
         "DEFAULT": [

@@ -97,7 +97,7 @@ class AIResearchWorkflow:
         """Detect stock symbol from query."""
         query_upper = query.upper()
 
-        # Common mappings
+        # Common mappings (including Chinese names)
         mappings = {
             "特斯拉": "TSLA", "TSLA": "TSLA",
             "英伟达": "NVDA", "NVIDIA": "NVDA", "NVDA": "NVDA",
@@ -105,7 +105,16 @@ class AIResearchWorkflow:
             "微软": "MSFT", "MICROSOFT": "MSFT", "MSFT": "MSFT",
             "谷歌": "GOOGL", "GOOGLE": "GOOGL", "GOOGL": "GOOGL",
             "亚马逊": "AMZN", "AMAZON": "AMZN", "AMZN": "AMZN",
-            "META": "META", "FACEBOOK": "META"
+            "META": "META", "FACEBOOK": "META",
+            # Chinese concept stocks
+            "阿里巴巴": "BABA", "ALIBABA": "BABA", "BABA": "BABA", "阿里": "BABA",
+            "拼多多": "PDD", "PDD": "PDD",
+            "京东": "JD", "JD": "JD",
+            "百度": "BIDU", "BAIDU": "BIDU", "BIDU": "BIDU",
+            "网易": "NTES", "NETEASE": "NTES", "NTES": "NTES",
+            "小鹏": "XPEV", "XPENG": "XPEV", "XPEV": "XPEV",
+            "理想": "LI", "LI AUTO": "LI",
+            "蔚来": "NIO", "NIO": "NIO"
         }
 
         for name, symbol in mappings.items():
