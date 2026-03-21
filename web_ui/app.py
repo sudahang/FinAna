@@ -1,0 +1,395 @@
+"""Gradio web UI for FinAna - Modern Design."""
+
+import gradio as gr
+from workflows.research_workflow import ResearchWorkflow
+
+# Custom CSS for modern design
+CUSTOM_CSS = """
+/* Global styles */
+:root {
+    --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    --card-bg: #ffffff;
+    --bg-gradient: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+}
+
+.gradio-container {
+    background: var(--bg-gradient);
+    min-height: 100vh;
+}
+
+/* Header styling */
+.header-section {
+    background: var(--primary-gradient);
+    padding: 40px 20px;
+    border-radius: 20px;
+    margin-bottom: 30px;
+    box-shadow: 0 10px 40px rgba(102, 126, 234, 0.3);
+    text-align: center;
+}
+
+.header-section h1 {
+    color: white;
+    font-size: 2.5em;
+    margin: 0;
+    font-weight: 700;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+}
+
+.header-section p {
+    color: rgba(255,255,255,0.9);
+    margin-top: 10px;
+    font-size: 1.1em;
+}
+
+/* Card styling */
+.card {
+    background: var(--card-bg);
+    border-radius: 16px;
+    padding: 30px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    margin-bottom: 20px;
+}
+
+/* Input styling */
+#query_input textarea {
+    background: #f8f9fa;
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    padding: 15px;
+    font-size: 16px;
+    transition: all 0.3s ease;
+}
+
+#query_input textarea:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+}
+
+/* Button styling */
+#analyze_btn {
+    background: var(--primary-gradient);
+    border: none;
+    border-radius: 12px;
+    padding: 15px 40px;
+    font-size: 16px;
+    font-weight: 600;
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+#analyze_btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 25px rgba(102, 126, 234, 0.5);
+}
+
+/* Output styling */
+#report_output {
+    background: white;
+    border-radius: 16px;
+    padding: 30px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+}
+
+/* Example buttons */
+.example-btn {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border: 2px solid #dee2e6;
+    border-radius: 10px;
+    padding: 12px 20px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    margin: 5px;
+}
+
+.example-btn:hover {
+    background: var(--primary-gradient);
+    border-color: #667eea;
+    color: white;
+    transform: translateY(-2px);
+}
+
+/* Steps section */
+.steps-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+}
+
+.step-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 25px;
+    border-radius: 12px;
+    text-align: center;
+    transition: transform 0.3s ease;
+}
+
+.step-card:hover {
+    transform: translateY(-5px);
+}
+
+.step-number {
+    background: rgba(255,255,255,0.2);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 15px;
+    font-size: 18px;
+    font-weight: bold;
+    color: white;
+}
+
+.step-title {
+    color: white;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.step-desc {
+    color: rgba(255,255,255,0.8);
+    font-size: 13px;
+}
+
+/* Stock tickers section */
+.stock-tickers {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    flex-wrap: wrap;
+    margin: 20px 0;
+}
+
+.ticker-badge {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    padding: 8px 16px;
+    border-radius: 20px;
+    color: white;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+/* Loading animation */
+.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.loading-dot {
+    width: 10px;
+    height: 10px;
+    background: #667eea;
+    border-radius: 50%;
+    animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.loading-dot:nth-child(1) { animation-delay: -0.32s; }
+.loading-dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes bounce {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+}
+"""
+
+
+def run_analysis(query: str) -> str:
+    """
+    Run investment research analysis and return report.
+
+    Args:
+        query: User's investment research query.
+
+    Returns:
+        Markdown-formatted research report.
+    """
+    if not query or not query.strip():
+        return """
+<div style="background: #fff3cd; padding: 20px; border-radius: 12px; border-left: 4px solid #ffc107;">
+    <strong>⚠️ 请输入查询内容</strong>
+    <p style="margin: 10px 0 0 0; color: #856404;">请在上方输入框中输入股票名称或公司，例如："分析特斯拉股票"</p>
+</div>
+"""
+
+    try:
+        workflow = ResearchWorkflow()
+        report = workflow.execute(query)
+        return report.full_report
+    except Exception as e:
+        return f"""
+<div style="background: #f8d7da; padding: 20px; border-radius: 12px; border-left: 4px solid #dc3545;">
+    <strong>❌ 生成报告时出错</strong>
+    <p style="margin: 10px 0 0 0; color: #721c24;">{str(e)}</p>
+</div>
+"""
+
+
+def create_demo() -> gr.Blocks:
+    """Create the Gradio demo application with modern design."""
+
+    with gr.Blocks(
+        title="FinAna | 智能投研助手",
+        css=CUSTOM_CSS,
+        fill_height=True
+    ) as demo:
+
+        # Header
+        gr.HTML("""
+        <div class="header-section">
+            <h1>📊 FinAna 智能投研助手</h1>
+            <p>基于多智能体协作的自动化投资研究分析系统</p>
+        </div>
+        """)
+
+        with gr.Row(equal_height=True):
+            # Left column - Input and Examples
+            with gr.Column(scale=1, min_width=400):
+                # Query Input Card
+                gr.HTML('<div class="card">')
+                gr.Markdown("### 💬 输入您的查询")
+                query_input = gr.Textbox(
+                    elem_id="query_input",
+                    label="",
+                    placeholder="例如：分析特斯拉股票的未来走势...",
+                    lines=4,
+                    container=False
+                )
+                analyze_btn = gr.Button(
+                    "🚀 开始分析",
+                    elem_id="analyze_btn",
+                    variant="primary",
+                    size="lg"
+                )
+                gr.HTML('</div>')
+
+                # Example Queries Card
+                gr.HTML('<div class="card">')
+                gr.Markdown("### 📝 示例查询")
+
+                def use_example(example: str) -> str:
+                    return example
+
+                examples = [
+                    "📈 分析特斯拉股票的未来走势",
+                    "💡 应该投资 NVIDIA 吗？",
+                    "🍎 苹果公司长期投资分析",
+                    "🔍 微软股票值得买入吗",
+                    "📊 谷歌投资价值分析"
+                ]
+
+                for example in examples:
+                    btn = gr.Button(example, elem_classes="example-btn")
+                    btn.click(fn=use_example, inputs=btn, outputs=query_input)
+
+                gr.HTML('</div>')
+
+                # Supported Stocks Card
+                gr.HTML('<div class="card">')
+                gr.Markdown("### 💹 支持的投资标的")
+                gr.HTML("""
+                <div class="stock-tickers">
+                    <span class="ticker-badge">🚗 TSLA 特斯拉</span>
+                    <span class="ticker-badge">🎮 NVDA 英伟达</span>
+                    <span class="ticker-badge">🍎 AAPL 苹果</span>
+                    <span class="ticker-badge">💻 MSFT 微软</span>
+                    <span class="ticker-badge">🔍 GOOGL 谷歌</span>
+                </div>
+                """)
+                gr.HTML('</div>')
+
+            # Right column - How it works and Output
+            with gr.Column(scale=1, min_width=400):
+                # How it works Card
+                gr.HTML('<div class="card">')
+                gr.Markdown("### ⚙️ 工作原理")
+                gr.HTML("""
+                <div class="steps-container">
+                    <div class="step-card">
+                        <div class="step-number">1</div>
+                        <div class="step-title">宏观经济分析</div>
+                        <div class="step-desc">GDP、通胀、利率等指标</div>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-number">2</div>
+                        <div class="step-title">行业分析</div>
+                        <div class="step-desc">行业趋势、竞争格局</div>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-number">3</div>
+                        <div class="step-title">公司分析</div>
+                        <div class="step-desc">财务健康、技术指标</div>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-number">4</div>
+                        <div class="step-title">报告合成</div>
+                        <div class="step-desc">生成完整投资建议</div>
+                    </div>
+                </div>
+                """)
+                gr.HTML('</div>')
+
+                # Output Card
+                gr.HTML('<div class="card" id="report_output">')
+                gr.Markdown("### 📄 分析报告")
+                report_output = gr.Markdown(
+                    label="",
+                    elem_id="report_output",
+                    value="""
+<div style="text-align: center; padding: 40px; color: #6c757d;">
+    <div style="font-size: 48px; margin-bottom: 20px;">📊</div>
+    <h3 style="margin-bottom: 10px;">准备生成报告</h3>
+    <p>在左侧输入股票或公司名称，点击"开始分析"获取详细的投资研究报告</p>
+</div>
+"""
+                )
+                gr.HTML('</div>')
+
+        # Footer
+        gr.HTML("""
+        <div style="text-align: center; margin-top: 30px; padding: 20px; color: #6c757d;">
+            <p style="margin: 0; font-size: 14px;">
+                ⚠️ <strong>免责声明</strong>：本报告仅供演示和教育用途，不构成投资建议。
+            </p>
+            <p style="margin: 5px 0 0 0; font-size: 13px;">
+                投资有风险，决策需谨慎。请咨询持牌金融顾问获取专业建议。
+            </p>
+        </div>
+        """)
+
+        # Set up click handler
+        analyze_btn.click(
+            fn=run_analysis,
+            inputs=query_input,
+            outputs=report_output
+        )
+
+        # Handle enter key
+        query_input.submit(
+            fn=run_analysis,
+            inputs=query_input,
+            outputs=report_output
+        )
+
+    return demo
+
+
+def launch():
+    """Launch the Gradio application."""
+    demo = create_demo()
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        show_error=True
+    )
+
+
+if __name__ == "__main__":
+    launch()

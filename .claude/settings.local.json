@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install -q fastapi uvicorn gradio pydantic pytest pytest-asyncio httpx python-multipart 2>&1)",
+      "Bash(python3 -m venv venv && ./venv/bin/pip install --upgrade pip)",
+      "Bash(./venv/bin/pip install fastapi uvicorn gradio pydantic pytest pytest-asyncio httpx python-multipart 2>&1)",
+      "Bash(./venv/bin/pytest tests/ -v 2>&1)",
+      "Bash(./venv/bin/pytest tests/test_agents.py::TestIndustryAnalystAgent::test_extract_sector_healthcare -v 2>&1)",
+      "Bash(./venv/bin/pytest tests/test_agents.py::TestReportSynthesizerAgent::test_synthesize_report -v 2>&1 | tail -30)",
+      "Bash(./venv/bin/python -m web_ui.app 2>&1)",
+      "Bash(./venv/bin/python web_ui/app.py 2>&1)",
+      "Bash(PYTHONPATH=/home/sudahang/Documents/github/FinAna ./venv/bin/python web_ui/app.py 2>&1)",
+      "Bash(netstat -tlnp 2>/dev/null | grep 7860 || ss -tlnp | grep 7860)",
+      "Bash(curl -s http://localhost:7860 2>&1 | head -20)",
+      "Bash(curl -s http://localhost:7860 2>&1 | head -50)"
+    ]
+  }
+}
