@@ -4,10 +4,12 @@ import os
 import requests
 from typing import Optional
 from pydantic import BaseModel
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file (search parent dirs)
+dotenv_path = find_dotenv(usecwd=True)
+if dotenv_path:
+    load_dotenv(dotenv_path)
 
 
 class DashScopeConfig(BaseModel):
@@ -37,13 +39,37 @@ class LLMClient:
             config: DashScope configuration. If None, reads from environment.
         """
         if config is None:
+            # Try to ensure .env is loaded relative to the project
+            dotenv_path = find_dotenv(usecwd=True)
+            if dotenv_path:
+                load_dotenv(dotenv_path, override=False)
+
             api_key = os.getenv("DASHSCOPE_API_KEY")
             if not api_key:
                 raise ValueError(
-                    "DASHSCOPE_API_KEY not found. "
-                    "Please set environment variable or pass config."
+                    "DASHSCOPE_API_KEY not found. Please set the environment variable "
+                    "or provide a DashScopeConfig. For local testing, place a .env file "
+                    "in the project root with DASHSCOPE_API_KEY=sk-... and restart."
                 )
-            config = DashScopeConfig(api_key=api_key)
+
+            # Allow overriding other config via environment variables
+            default_model = "qwen3.5-plus"
+            default_max_tokens = 2048
+            default_temperature = 0.7
+            default_timeout = 30
+
+            model = os.getenv("DASHSCOPE_MODEL") or default_model
+            max_tokens = int(os.getenv("DASHSCOPE_MAX_TOKENS") or default_max_tokens)
+            temperature = float(os.getenv("DASHSCOPE_TEMPERATURE") or default_temperature)
+            timeout = int(os.getenv("DASHSCOPE_TIMEOUT") or default_timeout)
+
+            config = DashScopeConfig(
+                api_key=api_key,
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                timeout=timeout,
+            )
 
         self.config = config
         self.session = requests.Session()
