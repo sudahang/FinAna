@@ -2,11 +2,13 @@
 
 from workflows.research_workflow import ResearchWorkflow, execute_research_workflow, WorkflowState
 from workflows.ai_research_workflow import AIResearchWorkflow, execute_ai_research_workflow
+from workflows.langgraph_workflow import AIResearchWorkflow as LangGraphAIResearchWorkflow
 
 __all__ = [
     "ResearchWorkflow",
     "execute_research_workflow",
     "WorkflowState",
     "AIResearchWorkflow",
-    "execute_ai_research_workflow"
+    "execute_ai_research_workflow",
+    "LangGraphAIResearchWorkflow"
 ]

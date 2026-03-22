@@ -54,7 +54,7 @@ class LLMClient:
 
             # Allow overriding other config via environment variables
             default_model = "qwen3.5-plus"
-            default_max_tokens = 2048
+            default_max_tokens = 2048 * 4
             default_temperature = 0.7
             default_timeout = 30
 

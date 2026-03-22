@@ -1,7 +1,7 @@
 """Gradio web UI for FinAna - Modern Design."""
 
 import gradio as gr
-from workflows.ai_research_workflow import AIResearchWorkflow
+from workflows.langgraph_workflow import AIResearchWorkflow
 from dotenv import load_dotenv
 import os
 
@@ -273,6 +273,99 @@ def run_analysis(query: str) -> str:
 """
 
 
+def run_analysis_streaming(query: str):
+    """
+    Run investment research analysis with streaming output.
+
+    Args:
+        query: User's investment research query.
+
+    Yields:
+        Intermediate status updates and final report.
+    """
+    if not query or not query.strip():
+        yield """
+<div style="background: #fff3cd; padding: 20px; border-radius: 12px; border-left: 4px solid #ffc107;">
+    <strong>⚠️ 请输入查询内容</strong>
+</div>
+"""
+        return
+
+    try:
+        # Check if API key is configured
+        api_key = os.getenv("DASHSCOPE_API_KEY")
+        if not api_key:
+            yield """
+<div style="background: #fff3cd; padding: 20px; border-radius: 12px; border-left: 4px solid #ffc107;">
+    <strong>⚠️ 配置提示</strong>
+    <p style="margin: 10px 0 0 0; color: #856404;">请先配置 DASHSCOPE_API_KEY 环境变量</p>
+</div>
+"""
+            return
+
+        # Initialize workflow
+        workflow = AIResearchWorkflow()
+        initial_state = {
+            "query": query,
+            "country": "",
+            "sector": "",
+            "symbol": "",
+            "macro_context": None,
+            "industry_context": None,
+            "company_analysis": None,
+            "report": None,
+            "error": None,
+            "messages": []
+        }
+
+        # Stream execution steps using LangGraph stream
+        graph = workflow.graph
+
+        # Stream the workflow execution
+        for step in graph.stream(initial_state, stream_mode="values"):
+            messages = step.get("messages", [])
+            if messages and len(messages) > 0:
+                # Get the latest message
+                latest_msg = messages[-1]
+                # Format as markdown
+                if hasattr(latest_msg, 'content'):
+                    yield f"# 📊 实时分析进度\n\n{latest_msg.content}"
+                else:
+                    yield f"# 📊 实时分析进度\n\n{str(latest_msg)}"
+
+        # Get final state
+        final_state = graph.invoke(initial_state)
+
+        if final_state.get("error"):
+            yield f"""
+<div style="background: #f8d7da; padding: 20px; border-radius: 12px; border-left: 4px solid #dc3545;">
+    <strong>❌ 分析失败</strong>
+    <p style="margin: 10px 0 0 0; color: #721c24;">{final_state['error']}</p>
+</div>
+"""
+            return
+
+        report = final_state.get("report")
+        if report:
+            yield f"# ✅ 分析完成\n\n{report.full_report}"
+        else:
+            yield "❌ 未生成报告"
+
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        yield f"""
+<div style="background: #f8d7da; padding: 20px; border-radius: 12px; border-left: 4px solid #dc3545;">
+    <strong>❌ 生成报告时出错</strong>
+    <p style="margin: 10px 0 0 0; color: #721c24;">{str(e)}</p>
+    <details>
+        <summary>查看详细错误</summary>
+        <pre>{error_trace}</pre>
+    </details>
+</div>
+"""
+
+
 def create_demo() -> gr.Blocks:
     """Create the Gradio demo application with modern design."""
 
@@ -405,17 +498,17 @@ def create_demo() -> gr.Blocks:
         </div>
         """)
 
-        # Set up click handler with queue support
+        # Set up click handler with streaming support
         analyze_btn.click(
-            fn=run_analysis,
+            fn=run_analysis_streaming,
             inputs=query_input,
             outputs=report_output,
             show_progress="full"
         )
 
-        # Handle enter key
+        # Handle enter key with streaming
         query_input.submit(
-            fn=run_analysis,
+            fn=run_analysis_streaming,
             inputs=query_input,
             outputs=report_output,
             show_progress="full"
