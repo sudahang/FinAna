@@ -93,8 +93,8 @@ class AIResearchWorkflow:
         else:
             country = "us"  # Default to US for known stocks
 
-        # Detect symbol
-        symbol = self._detect_symbol(query_upper)
+        # Detect symbol - pass original query for Chinese matching
+        symbol = self._detect_symbol(query, query_upper)
 
         # Detect sector
         sector = self._detect_sector(query_lower)
@@ -106,10 +106,30 @@ class AIResearchWorkflow:
             "messages": state.get("messages", []) + [f"分析参数：国家={country}, 股票={symbol}, 行业={sector}"]
         }
 
-    def _detect_symbol(self, query_upper: str) -> str:
+    def _detect_symbol(self, query: str, query_upper: str) -> str:
         """Detect stock symbol from query."""
-        # Common mappings (including Chinese names)
+        # 首先检查是否包含 A 股 6 位代码
+        import re
+        cn_stock_pattern = re.findall(r'\b([06]\d{5})\b', query_upper)
+        if cn_stock_pattern:
+            code = cn_stock_pattern[0]
+            # 添加市场前缀
+            if code.startswith(('6', '9')):
+                return f"sh{code}"
+            elif code.startswith(('0', '3')):
+                return f"sz{code}"
+
+        # 检查港股 5 位代码
+        hk_pattern = re.findall(r'\b(HK\d{5}|\d{5})\b', query_upper)
+        if hk_pattern:
+            code = hk_pattern[0]
+            if code.startswith('HK'):
+                return code.upper()
+            return f"HK{code}"
+
+        # Common mappings (including Chinese names) - 包含 A 股和港股
         mappings = {
+            # 美股
             "特斯拉": "TSLA", "TSLA": "TSLA",
             "英伟达": "NVDA", "NVIDIA": "NVDA", "NVDA": "NVDA",
             "苹果": "AAPL", "APPLE": "AAPL", "AAPL": "AAPL",
@@ -117,7 +137,7 @@ class AIResearchWorkflow:
             "谷歌": "GOOGL", "GOOGLE": "GOOGL", "GOOGL": "GOOGL",
             "亚马逊": "AMZN", "AMAZON": "AMZN", "AMZN": "AMZN",
             "META": "META", "FACEBOOK": "META",
-            # Chinese concept stocks
+            # 中概股
             "阿里巴巴": "BABA", "ALIBABA": "BABA", "BABA": "BABA", "阿里": "BABA",
             "拼多多": "PDD", "PDD": "PDD",
             "京东": "JD", "JD": "JD",
@@ -125,15 +145,27 @@ class AIResearchWorkflow:
             "网易": "NTES", "NETEASE": "NTES", "NTES": "NTES",
             "小鹏": "XPEV", "XPENG": "XPEV", "XPEV": "XPEV",
             "理想": "LI", "LI AUTO": "LI",
-            "蔚来": "NIO", "NIO": "NIO"
+            "蔚来": "NIO", "NIO": "NIO",
+            # A 股
+            "贵州茅台": "sh600519", "茅台": "sh600519",
+            "宁德时代": "sz300750", "宁德": "sz300750",
+            "中国平安": "sh601318", "平安": "sh601318",
+            "招商银行": "sh600036", "招行": "sh600036",
+            "五粮液": "sz000858",
+            "比亚迪": "sz002594",
+            # 港股
+            "腾讯": "HK00700", "腾讯控股": "HK00700",
+            "阿里巴巴港股": "HK09988",
+            "美团": "HK03690",
+            "小米": "HK01810", "小米集团": "HK01810"
         }
 
+        # 使用原始查询匹配中文名称
         for name, symbol in mappings.items():
-            if name in query_upper:
+            if name in query:
                 return symbol
 
-        # Check for ticker pattern
-        import re
+        # 检查ticker pattern (3-4位大写字母)
         tickers = re.findall(r'\b[A-Z]{3,4}\b', query_upper)
         if tickers:
             return tickers[0]
