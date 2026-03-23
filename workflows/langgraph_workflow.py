@@ -6,6 +6,7 @@ from agents.macro_analyst_ai import MacroAnalystAgent
 from agents.industry_analyst_ai import IndustryAnalystAgent
 from agents.equity_analyst_ai import EquityAnalystAgent
 from agents.report_synthesizer_ai import ReportSynthesizerAgent
+from agents.input_router_ai import InputRouterAgent, get_router_agent
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 
@@ -29,10 +30,11 @@ class AIResearchWorkflow:
     AI-powered research workflow using LangGraph.
 
     Coordinates AI agents with real data fetching:
-    1. Macro Analyst (AI + real macro data)
-    2. Industry Analyst (AI + real industry data)
-    3. Equity Analyst (AI + real stock data)
-    4. Report Synthesizer (AI-generated report)
+    1. Input Router (parses user query)
+    2. Macro Analyst (AI + real macro data)
+    3. Industry Analyst (AI + real industry data)
+    4. Equity Analyst (AI + real stock data)
+    5. Report Synthesizer (AI-generated report)
     """
 
     def __init__(self, llm_config=None):
@@ -42,6 +44,10 @@ class AIResearchWorkflow:
         Args:
             llm_config: Optional LLM configuration.
         """
+        # Initialize the Input Router Agent
+        self.input_router = InputRouterAgent()
+
+        # Initialize analyst agents
         self.macro_analyst = MacroAnalystAgent()
         self.industry_analyst = IndustryAnalystAgent()
         self.equity_analyst = EquityAnalystAgent()
@@ -80,30 +86,24 @@ class AIResearchWorkflow:
         return builder.compile()
 
     def _detect_params(self, state: WorkflowState) -> dict:
-        """Detect country and symbol from query."""
+        """Detect country, symbol, and sector from query using Input Router Agent."""
         query = state["query"]
-        query_lower = query.lower()
-        query_upper = query.upper()
 
-        # Detect country
-        if any(kw in query_lower for kw in ["中国", "a 股", "港股", "沪深"]):
-            country = "china"
-        elif any(kw in query_lower for kw in ["美股", "美国", "nasdaq", "nyse"]):
-            country = "us"
-        else:
-            country = "us"  # Default to US for known stocks
+        # Use Input Router Agent to parse the query
+        params = self.input_router.parse_query(query)
 
-        # Detect symbol - pass original query for Chinese matching
-        symbol = self._detect_symbol(query, query_upper)
+        country = params.get('country', 'us')
+        symbol = params.get('symbol', 'TSLA')
+        sector = params.get('sector', '科技')
 
-        # Detect sector
-        sector = self._detect_sector(query_lower)
+        # Log detection info
+        detection_info = f"识别结果：国家={country}, 股票={symbol}, 行业={sector}, 置信度={params.get('confidence', 0):.0%}"
 
         return {
             "country": country,
             "symbol": symbol,
             "sector": sector,
-            "messages": state.get("messages", []) + [f"分析参数：国家={country}, 股票={symbol}, 行业={sector}"]
+            "messages": state.get("messages", []) + [f"### 🎯 步骤 0/4: 查询分析完成\n\n- {detection_info}"]
         }
 
     def _detect_symbol(self, query: str, query_upper: str) -> str:
