@@ -3,7 +3,7 @@
 import uuid
 from fastapi import APIRouter, HTTPException
 from api.models import AnalysisRequest, AnalysisResponse, AnalysisResult
-from workflows.research_workflow import ResearchWorkflow
+from workflows.langgraph_workflow import AIResearchWorkflow
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 

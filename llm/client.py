@@ -5,6 +5,8 @@ import requests
 from typing import Optional
 from pydantic import BaseModel
 from dotenv import load_dotenv, find_dotenv
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Load environment variables from .env file (search parent dirs)
 dotenv_path = find_dotenv(usecwd=True)
@@ -20,7 +22,7 @@ class DashScopeConfig(BaseModel):
     model: str = "qwen3.5-plus"
     max_tokens: int = 2048
     temperature: float = 0.7
-    timeout: int = 30
+    timeout: int = 90  # 90 seconds for complex analysis tasks
 
 
 class LLMClient:
@@ -56,7 +58,7 @@ class LLMClient:
             default_model = "qwen3.5-plus"
             default_max_tokens = 2048 * 4
             default_temperature = 0.7
-            default_timeout = 30
+            default_timeout = 90
 
             model = os.getenv("DASHSCOPE_MODEL") or default_model
             max_tokens = int(os.getenv("DASHSCOPE_MAX_TOKENS") or default_max_tokens)
@@ -73,6 +75,16 @@ class LLMClient:
 
         self.config = config
         self.session = requests.Session()
+        # Configure retries for transient network errors/timeouts
+        retries = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "POST"]
+        )
+        adapter = HTTPAdapter(max_retries=retries)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
         self.session.headers.update({
             "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json"
@@ -113,7 +125,7 @@ class LLMClient:
             response = self.session.post(
                 f"{self.config.base_url}/chat/completions",
                 json=payload,
-                timeout=self.config.timeout
+                timeout=kwargs.get("timeout", self.config.timeout)
             )
             response.raise_for_status()
             result = response.json()

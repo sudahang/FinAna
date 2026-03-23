@@ -77,7 +77,7 @@ class IndustryAnalystAgent:
 - 政策支持：{industry_data.get('policy_support', 'N/A')}
 
 请提供：
-1. 一段行业分析总结（100-200 字）
+1. 一段行业分析总结（200-500 字）
 2. 行业前景判断（positive/neutral/negative）
 3. 该行业的主要趋势（列出 3-5 条）
 4. 竞争格局描述

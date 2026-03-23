@@ -2,8 +2,13 @@
 
 import requests
 import time
+import json
+import re
+import logging
 from typing import Optional
 from datetime import datetime
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 class FinancialDataFetcher:
@@ -35,6 +40,18 @@ class FinancialDataFetcher:
             "Accept": "application/json, text/javascript, */*; q=0.01",
             "Referer": "https://finance.sina.com.cn/"
         })
+        # Configure retries for transient network errors
+        retries = Retry(total=3, backoff_factor=0.5,
+                        status_forcelist=[429, 500, 502, 503, 504],
+                        allowed_methods=["HEAD", "GET", "POST"])
+        adapter = HTTPAdapter(max_retries=retries)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+
+        # Logger
+        self.logger = logging.getLogger(__name__)
+        if not self.logger.handlers:
+            logging.basicConfig(level=logging.INFO)
 
     def get_stock_quote(self, symbol: str) -> Optional[dict]:
         """
@@ -73,8 +90,10 @@ class FinancialDataFetcher:
                         "ask": float(fields[13]) if fields[13] else 0,
                         "timestamp": datetime.now()
                     }
+        except requests.exceptions.RequestException as e:
+            self.logger.warning("Error fetching quote for %s: %s", symbol, e)
         except Exception as e:
-            print(f"Error fetching quote for {symbol}: {e}")
+            self.logger.exception("Unexpected error fetching quote for %s: %s", symbol, e)
 
         return None
 
@@ -118,26 +137,33 @@ class FinancialDataFetcher:
             }
 
             response = self.session.get(url, params=params, timeout=10)
-            if response.status_code == 200:
+            response.raise_for_status()
+            try:
                 data = response.json()
-                if data.get("data"):
-                    fields = data["data"]
-                    price = fields.get("f44", 0)
-                    # Validate price - should be reasonable for most stocks
-                    if price and 0.1 < price < 10000:
-                        return {
-                            "name": fields.get("f14", symbol),
-                            "current_price": price,
-                            "open": fields.get("f43", 0),
-                            "high": fields.get("f131", 0),
-                            "low": fields.get("f133", 0),
-                            "close": fields.get("f130", 0),
-                            "market_cap": fields.get("f152", 0),
-                            "pe_ratio": fields.get("f10004", 0),
-                            "timestamp": datetime.now()
-                        }
+            except Exception:
+                self.logger.warning("Eastmoney quote: failed to parse JSON for %s; text truncated: %s", symbol, response.text[:200])
+                data = None
+
+            if data and data.get("data"):
+                fields = data["data"]
+                price = fields.get("f44", 0)
+                # Validate price - should be reasonable for most stocks
+                if price and 0.1 < price < 10000:
+                    return {
+                        "name": fields.get("f14", symbol),
+                        "current_price": price,
+                        "open": fields.get("f43", 0),
+                        "high": fields.get("f131", 0),
+                        "low": fields.get("f133", 0),
+                        "close": fields.get("f130", 0),
+                        "market_cap": fields.get("f152", 0),
+                        "pe_ratio": fields.get("f10004", 0),
+                        "timestamp": datetime.now()
+                    }
+        except requests.exceptions.RequestException as e:
+            self.logger.warning("Eastmoney quote failed for %s: %s", symbol, e)
         except Exception as e:
-            print(f"Eastmoney quote failed: {e}")
+            self.logger.exception("Unexpected Eastmoney quote error for %s: %s", symbol, e)
 
         return None
 
@@ -171,13 +197,26 @@ class FinancialDataFetcher:
             )
 
             if response.status_code == 200:
-                # Remove callback wrapper
                 text = response.text.strip()
-                if text.startswith("callback("):
-                    text = text[9:-1]
+                # Attempt to extract JSON from callback(...) wrapper or raw JSON
+                data = None
+                try:
+                    if text.startswith("callback(") and text.endswith(")"):
+                        inner = text[text.find("(") + 1: -1]
+                    else:
+                        inner = text
 
-                data = eval(text)  # Safe to eval as we control the input
-                if "result" in data and "data" in data["result"]:
+                    data = json.loads(inner)
+                except Exception:
+                    # As a last resort, try to sanitize JS-style quotes then parse
+                    try:
+                        sanitized = re.sub(r"\b([a-zA-Z0-9_]+)\s*:\s*", r'"\\1":', inner)
+                        data = json.loads(sanitized)
+                    except Exception as e:
+                        self.logger.warning("Error parsing Sina news JSON for %s: %s; text truncated: %s", symbol, e, text[:200])
+                        data = None  # Fail quietly to use fallback
+
+                if data and "result" in data and "data" in data["result"]:
                     for item in data["result"]["data"]:
                         news_list.append({
                             "title": item.get("title", ""),
@@ -189,11 +228,14 @@ class FinancialDataFetcher:
                             "summary": item.get("intro", "")
                         })
 
+        except requests.exceptions.RequestException as e:
+            self.logger.warning("Network error fetching Sina news for %s: %s", symbol, e)
         except Exception as e:
-            print(f"Error fetching news for {symbol}: {e}")
+            self.logger.exception("Unexpected error fetching Sina news for %s: %s", symbol, e)
 
         # Fallback to Eastmoney if Sina fails
         if not news_list:
+            self.logger.info("Falling back to Eastmoney news for %s", symbol)
             news_list = self._get_eastmoney_news(symbol, limit)
 
         return news_list
@@ -217,10 +259,19 @@ class FinancialDataFetcher:
                 params=params,
                 timeout=10
             )
+            response.raise_for_status()
+            text = response.text.strip()
+            if text:
+                try:
+                    data = response.json()
+                except Exception:
+                    try:
+                        data = json.loads(text)
+                    except Exception as e:
+                        self.logger.warning("Error parsing Eastmoney news JSON for %s: %s; text truncated: %s", symbol, e, text[:200])
+                        data = None
 
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("Data"):
+                if data and data.get("Data"):
                     for item in data["Data"]:
                         news_list.append({
                             "title": item.get("Title", ""),
@@ -230,8 +281,10 @@ class FinancialDataFetcher:
                             "summary": item.get("Brief", "")
                         })
 
+        except requests.exceptions.RequestException as e:
+            self.logger.warning("Network error fetching Eastmoney news for %s: %s", symbol, e)
         except Exception as e:
-            print(f"Error fetching Eastmoney news: {e}")
+            self.logger.exception("Unexpected error fetching Eastmoney news for %s: %s", symbol, e)
 
         return news_list
 
@@ -271,8 +324,10 @@ class FinancialDataFetcher:
                         "total_revenue": fields.get("f10006", 0)
                     }
 
+        except requests.exceptions.RequestException as e:
+            self.logger.warning("Network error fetching financial reports for %s: %s", symbol, e)
         except Exception as e:
-            print(f"Error fetching financial reports for {symbol}: {e}")
+            self.logger.exception("Unexpected error fetching financial reports for %s: %s", symbol, e)
 
         return None
 

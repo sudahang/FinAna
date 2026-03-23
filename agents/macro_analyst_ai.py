@@ -3,6 +3,7 @@
 from llm.client import LLMClient, get_llm_client
 from data.finance_data import FinancialDataFetcher, get_data_fetcher
 from data.schemas import MacroContext
+from skills.stock_info.stock_info import get_macro_data
 import json
 
 
@@ -47,8 +48,12 @@ class MacroAnalystAgent:
         Returns:
             MacroContext with AI-generated analysis.
         """
-        # Fetch real macro data
-        macro_data = self.data_fetcher.get_macro_data(country)
+        # Fetch real macro data using stock_info skill (more reliable)
+        try:
+            macro_data = get_macro_data(country)
+        except Exception as e:
+            print(f"Macro data fetch failed, using fallback: {e}")
+            macro_data = self.data_fetcher.get_macro_data(country)
 
         # Build prompt for AI analysis
         user_prompt = self._build_analysis_prompt(macro_data, country)

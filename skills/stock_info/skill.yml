@@ -1,0 +1,56 @@
+name: stock_info
+description: 查询上市公司信息 (A 股/港股/美股)
+author: FinAna
+version: 1.0.0
+
+commands:
+  - name: search
+    description: 搜索股票，支持公司名称、代码、拼音
+    usage: stock_info.search(keyword="特斯拉")
+
+  - name: quote
+    description: 获取实时行情 (股价、涨跌幅、成交量等)
+    usage: stock_info.quote(symbol="sh600519")
+
+  - name: company
+    description: 获取公司基本信息 (行业、财务指标等)
+    usage: stock_info.company(symbol="TSLA")
+
+  - name: history
+    description: 获取历史 K 线数据
+    usage: stock_info.history(symbol="sh600519", start_date="20250101", period="d")
+
+  - name: news
+    description: 获取股票相关新闻
+    usage: stock_info.news(symbol="sh600519", limit=10)
+
+data_sources:
+  - name: 新浪财经
+    url: https://finance.sina.com.cn/
+    type: 实时行情、新闻
+
+  - name: 东方财富
+    url: https://www.eastmoney.com/
+    type: 行情、财务数据、新闻
+
+  - name: 巨潮资讯网
+    url: http://www.cninfo.com.cn/
+    type: 法定信息披露 (可手动查询)
+
+supported_markets:
+  - A 股 (上交所 60xxxx/科创板 68xxxx/深交所 00xxxx/创业板 30xxxx/北交所)
+  - 港股 (00700 腾讯、09988 阿里等)
+  - 美股 (AAPL、TSLA、NVDA 等)
+
+examples:
+  - description: 搜索贵州茅台
+    command: stock_info.search(keyword="贵州茅台")
+
+  - description: 获取茅台实时行情
+    command: stock_info.quote(symbol="sh600519")
+
+  - description: 查询特斯拉公司信息
+    command: stock_info.company(symbol="TSLA")
+
+  - description: 获取腾讯历史 K 线
+    command: stock_info.history(symbol="HK00700", period="d")
