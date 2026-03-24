@@ -179,7 +179,7 @@ def analyze_stock(query: str):
 
 def main():
     """主函数"""
-    if len(sys.argv) < 2:
+    if len(sys.argv) < 2 or sys.argv[1] in ['--help', '-h', 'help']:
         print(f"""
 {Colors.BOLD}FinAna 智能投研分析系统{Colors.ENDC}
 
