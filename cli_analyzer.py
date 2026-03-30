@@ -185,6 +185,7 @@ def main():
 
 {Colors.YELLOW}用法:{Colors.ENDC}
     python cli_analyzer.py "查询内容"
+    ./cli.sh "查询内容"
 
 {Colors.YELLOW}示例:{Colors.ENDC}
     python cli_analyzer.py "分析腾讯股票"
@@ -195,11 +196,14 @@ def main():
 
 {Colors.YELLOW}支持的市场:{Colors.ENDC}
     - A 股：贵州茅台 (sh600519)、宁德时代 (sz300750)
-    - 港股：腾讯控股 (HK00700)、美团 (HK03690)
+    - 港股：腾讯控股 (HK00700)、美团 (HK03690)、小米集团 (HK01810)
     - 美股：特斯拉 (TSLA)、英伟达 (NVDA)、苹果 (AAPL)
-    - 中概股：阿里巴巴 (BABA)、拼多多 (PDD)
+    - 中概股：阿里巴巴 (BABA)、拼多多 (PDD)、京东 (JD)
+
+{Colors.YELLOW}选项:{Colors.ENDC}
+    --help, -h, help    显示帮助信息
 """)
-        sys.exit(1)
+        sys.exit(0 if len(sys.argv) >= 2 else 1)
 
     # 组合查询参数
     query = " ".join(sys.argv[1:])

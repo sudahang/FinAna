@@ -1,0 +1,152 @@
+# Docker Compose configuration for FinAna storage services
+#
+# This file starts Redis and SeaweedFS for report caching and storage.
+#
+# Usage:
+#   docker-compose -f docker-compose.storage.yml up -d
+#   docker-compose -f docker-compose.storage.yml down
+#
+# Services:
+#   - Redis: For caching report summaries and metadata
+#   - SeaweedFS: For storing full report content
+#
+# Ports:
+#   - Redis: 6379
+#   - SeaweedFS Master: 9333
+#   - SeaweedFS Volume: 8080
+#   - SeaweedFS Filer: 8888
+
+services:
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: finana-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - finana-network
+
+  # SeaweedFS for file storage
+  # Single-node setup with all components (master, volume, filer)
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    container_name: finana-seaweedfs
+    restart: unless-stopped
+    ports:
+      # Master
+      - "9333:9333"
+      - "19333:19333"
+      # Volume
+      - "8080:8080"
+      # Filer
+      - "8888:8888"
+      - "8111:8111"
+    volumes:
+      - seaweedfs-data:/data
+    entrypoint: ["weed"]
+    command: >
+      -logtostderr=true
+      filer
+      -master=127.0.0.1:9333
+      -ip=127.0.0.1
+      -port=8888
+      -filer.maxMB=64
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - finana-network
+
+  # SeaweedFS Master (separate container for clarity)
+  seaweedfs-master:
+    image: chrislusf/seaweedfs:latest
+    container_name: finana-seaweedfs-master
+    restart: unless-stopped
+    ports:
+      - "9334:9333"
+      - "19334:19333"
+    volumes:
+      - seaweedfs-master-data:/data
+    entrypoint: ["weed"]
+    command: >
+      -logtostderr=true
+      master
+      -ip=0.0.0.0
+      -port=9333
+      -mdir=/data/master
+    networks:
+      - finana-network
+
+  # SeaweedFS Volume Server
+  seaweedfs-volume:
+    image: chrislusf/seaweedfs:latest
+    container_name: finana-seaweedfs-volume
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    volumes:
+      - seaweedfs-volume-data:/data
+    entrypoint: ["weed"]
+    command: >
+      -logtostderr=true
+      volume
+      -mserver=seaweedfs-master:9333
+      -ip=0.0.0.0
+      -port=8080
+      -dir=/data/volume
+      -max=0
+    depends_on:
+      - seaweedfs-master
+    networks:
+      - finana-network
+
+  # SeaweedFS Filer (with Redis integration)
+  seaweedfs-filer:
+    image: chrislusf/seaweedfs:latest
+    container_name: finana-seaweedfs-filer
+    restart: unless-stopped
+    ports:
+      - "8889:8888"
+    volumes:
+      - seaweedfs-filer-data:/data
+    entrypoint: ["weed"]
+    command: >
+      -logtostderr=true
+      filer
+      -master=seaweedfs-master:9333
+      -ip=0.0.0.0
+      -port=8888
+      -filer.maxMB=64
+      -meta=redis
+      -redisServer=redis:6379
+    depends_on:
+      - seaweedfs-master
+      - seaweedfs-volume
+      - redis
+    networks:
+      - finana-network
+
+networks:
+  finana-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local
+  seaweedfs-data:
+    driver: local
+  seaweedfs-master-data:
+    driver: local
+  seaweedfs-volume-data:
+    driver: local
+  seaweedfs-filer-data:
+    driver: local

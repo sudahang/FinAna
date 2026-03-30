@@ -1,12 +1,17 @@
-"""Gradio web UI for FinAna - Modern Design."""
+"""Gradio web UI for FinAna - Modern Design with Multi-turn Chat Support."""
 
 import gradio as gr
 from workflows.langgraph_workflow import AIResearchWorkflow
+from memory.conversation_memory import get_conversation_memory
 from dotenv import load_dotenv
 import os
+import uuid
 
 # Load environment variables
 load_dotenv()
+
+# Get conversation memory singleton
+conversation_memory = get_conversation_memory()
 
 # Custom CSS for modern design
 CUSTOM_CSS = """
@@ -366,8 +371,79 @@ def run_analysis_streaming(query: str):
 """
 
 
+def chat_with_memory(
+    message: str,
+    history: list[list[str]]
+) -> str:
+    """
+    Chat function with conversation memory support.
+
+    Args:
+        message: User's message.
+        history: Conversation history as [[user_msg, assistant_msg], ...].
+
+    Returns:
+        Assistant response.
+    """
+    if not message or not message.strip():
+        return "请输入消息内容。"
+
+    try:
+        # Check if API key is configured
+        api_key = os.getenv("DASHSCOPE_API_KEY")
+        if not api_key:
+            return """⚠️ **配置提示**
+
+请先配置 DASHSCOPE_API_KEY 环境变量以使用 AI 分析功能。
+
+1. 访问 [DashScope 控制台](https://dashscope.console.aliyun.com/) 获取 API Key
+2. 将 .env.example 复制为 .env 并填入 API Key
+3. 重启服务"""
+
+        # Generate or get session ID from history length (simple session tracking)
+        # In a real implementation, you'd use a proper session management
+        session_id = f"webui_session_{len(history)}"
+
+        # Get conversation history from Gradio format
+        conv_history = []
+        for user_msg, assistant_msg in history:
+            conv_history.append({"role": "user", "content": user_msg})
+            conv_history.append({"role": "assistant", "content": assistant_msg})
+
+        # Execute workflow with conversation memory
+        workflow = AIResearchWorkflow()
+        report = workflow.execute(
+            query=message,
+            session_id=session_id,
+            conversation_history=conv_history
+        )
+
+        return report.full_report
+
+    except Exception as e:
+        return f"""❌ **生成回复时出错**
+
+{str(e)}
+
+请检查配置后重试。"""
+
+
+def clear_conversation() -> tuple[str, list]:
+    """
+    Clear conversation history.
+
+    Returns:
+        Success message and empty history.
+    """
+    # Clear all sessions (in production, you'd want to target specific session)
+    global conversation_memory
+    conversation_memory = get_conversation_memory()
+
+    return "✅ 对话历史已清除，开始新的对话吧！", []
+
+
 def create_demo() -> gr.Blocks:
-    """Create the Gradio demo application with modern design."""
+    """Create the Gradio demo application with modern design and multi-turn chat."""
 
     with gr.Blocks(
         title="FinAna | 智能投研助手",
@@ -379,112 +455,191 @@ def create_demo() -> gr.Blocks:
         gr.HTML("""
         <div class="header-section">
             <h1>📊 FinAna 智能投研助手</h1>
-            <p>基于多智能体协作的自动化投资研究分析系统</p>
+            <p>基于多智能体协作的自动化投资研究分析系统 - 支持多轮对话</p>
         </div>
         """)
 
-        with gr.Row(equal_height=True):
-            # Left column - Input and Examples
-            with gr.Column(scale=1, min_width=400):
-                # Query Input Card
-                gr.HTML('<div class="card">')
-                gr.Markdown("### 💬 输入您的查询")
-                query_input = gr.Textbox(
-                    elem_id="query_input",
-                    label="",
-                    placeholder="例如：分析特斯拉股票的未来走势...",
-                    lines=4,
-                    container=False
-                )
-                analyze_btn = gr.Button(
-                    "🚀 开始分析",
-                    elem_id="analyze_btn",
-                    variant="primary",
-                    size="lg"
-                )
-                gr.HTML('</div>')
+        # Create tabs for different modes
+        with gr.Tabs(elem_classes="modern-tabs") as tabs:
 
-                # Example Queries Card
-                gr.HTML('<div class="card">')
-                gr.Markdown("### 📝 示例查询")
+            # Tab 1: Chat Mode (Multi-turn)
+            with gr.TabItem("💬 多轮对话", id=0) as chat_tab:
+                with gr.Row(equal_height=True):
+                    # Left column - Chat input and controls
+                    with gr.Column(scale=1, min_width=400):
+                        gr.HTML('<div class="card">')
+                        gr.Markdown("### 🗨️ 开始对话")
+                        gr.Markdown("""
+                        **多轮对话功能**让您能够:
+                        - 基于之前的分析结果进行深入提问
+                        - 对比多只股票的投资价值
+                        - 获取更详细的数据解释
 
-                def use_example(example: str) -> str:
-                    return example
+                        **示例**:
+                        1. 先问："分析特斯拉股票"
+                        2. 再问："它的估值合理吗？"
+                        3. 再问："和比亚迪比哪个更值得投资？"
+                        """)
 
-                examples = [
-                    "📈 分析特斯拉股票的未来走势",
-                    "💡 应该投资 NVIDIA 吗？",
-                    "🍎 苹果公司长期投资分析",
-                    "🔍 微软股票值得买入吗",
-                    "📊 谷歌投资价值分析"
-                ]
+                        with gr.Row():
+                            clear_btn = gr.Button(
+                                "🗑️ 清除对话",
+                                variant="secondary",
+                                size="lg"
+                            )
 
-                for example in examples:
-                    btn = gr.Button(example, elem_classes="example-btn")
-                    btn.click(fn=use_example, inputs=btn, outputs=query_input)
+                        gr.HTML('</div>')
 
-                gr.HTML('</div>')
+                        # Example Queries Card
+                        gr.HTML('<div class="card">')
+                        gr.Markdown("### 📝 示例问题")
 
-                # Supported Stocks Card
-                gr.HTML('<div class="card">')
-                gr.Markdown("### 💹 支持的投资标的")
-                gr.HTML("""
-                <div class="stock-tickers">
-                    <span class="ticker-badge">🚗 TSLA 特斯拉</span>
-                    <span class="ticker-badge">🎮 NVDA 英伟达</span>
-                    <span class="ticker-badge">🍎 AAPL 苹果</span>
-                    <span class="ticker-badge">💻 MSFT 微软</span>
-                    <span class="ticker-badge">🔍 GOOGL 谷歌</span>
-                </div>
-                """)
-                gr.HTML('</div>')
+                        examples = [
+                            "📈 分析特斯拉股票的未来走势",
+                            "💡 特斯拉的估值合理吗？",
+                            "🔍 对比特斯拉和比亚迪",
+                            "📊 特斯拉的财务健康状况如何？",
+                            "🎯 现在适合买入特斯拉吗？"
+                        ]
 
-            # Right column - How it works and Output
-            with gr.Column(scale=1, min_width=400):
-                # How it works Card
-                gr.HTML('<div class="card">')
-                gr.Markdown("### ⚙️ 工作原理")
-                gr.HTML("""
-                <div class="steps-container">
-                    <div class="step-card">
-                        <div class="step-number">1</div>
-                        <div class="step-title">宏观经济分析</div>
-                        <div class="step-desc">GDP、通胀、利率等指标</div>
-                    </div>
-                    <div class="step-card">
-                        <div class="step-number">2</div>
-                        <div class="step-title">行业分析</div>
-                        <div class="step-desc">行业趋势、竞争格局</div>
-                    </div>
-                    <div class="step-card">
-                        <div class="step-number">3</div>
-                        <div class="step-title">公司分析</div>
-                        <div class="step-desc">财务健康、技术指标</div>
-                    </div>
-                    <div class="step-card">
-                        <div class="step-number">4</div>
-                        <div class="step-title">报告合成</div>
-                        <div class="step-desc">生成完整投资建议</div>
-                    </div>
-                </div>
-                """)
-                gr.HTML('</div>')
+                        for example in examples:
+                            gr.Button(example, elem_classes="example-btn")
 
-                # Output Card
-                gr.HTML('<div class="card" id="report_output">')
-                gr.Markdown("### 📄 分析报告")
-                report_output = gr.Markdown(
-                    label="",
-                    elem_id="report_output",
-                    value="""
+                        gr.HTML('</div>')
+
+                    # Right column - Chat output
+                    with gr.Column(scale=2, min_width=600):
+                        gr.HTML('<div class="card">')
+                        gr.Markdown("### 💬 对话记录")
+
+                        # Chat interface
+                        chat_interface = gr.ChatInterface(
+                            fn=chat_with_memory,
+                            title="",
+                            description="输入您的问题，获取智能投资分析",
+                            examples=[
+                                ["分析特斯拉股票"],
+                                ["特斯拉的竞争优势是什么？"],
+                                ["对比苹果和微软"],
+                                ["现在适合买入 NVIDIA 吗？"]
+                            ],
+                            textbox=gr.Textbox(
+                                placeholder="输入您的问题，例如：分析特斯拉股票...",
+                                container=False,
+                                scale=7
+                            ),
+                            retry_btn=None,
+                            undo_btn="↩️ 撤回",
+                            clear_btn="🗑️ 清除",
+                            theme="soft"
+                        )
+
+                        gr.HTML('</div>')
+
+            # Tab 2: Single Analysis Mode (Original)
+            with gr.TabItem("📊 单次分析", id=1) as analysis_tab:
+                with gr.Row(equal_height=True):
+                    # Left column - Input and Examples
+                    with gr.Column(scale=1, min_width=400):
+                        # Query Input Card
+                        gr.HTML('<div class="card">')
+                        gr.Markdown("### 💬 输入您的查询")
+                        query_input = gr.Textbox(
+                            elem_id="query_input",
+                            label="",
+                            placeholder="例如：分析特斯拉股票的未来走势...",
+                            lines=4,
+                            container=False
+                        )
+                        analyze_btn = gr.Button(
+                            "🚀 开始分析",
+                            elem_id="analyze_btn",
+                            variant="primary",
+                            size="lg"
+                        )
+                        gr.HTML('</div>')
+
+                        # Example Queries Card
+                        gr.HTML('<div class="card">')
+                        gr.Markdown("### 📝 示例查询")
+
+                        def use_example(example: str) -> str:
+                            return example
+
+                        examples = [
+                            "📈 分析特斯拉股票的未来走势",
+                            "💡 应该投资 NVIDIA 吗？",
+                            "🍎 苹果公司长期投资分析",
+                            "🔍 微软股票值得买入吗",
+                            "📊 谷歌投资价值分析"
+                        ]
+
+                        for example in examples:
+                            btn = gr.Button(example, elem_classes="example-btn")
+                            btn.click(fn=use_example, inputs=btn, outputs=query_input)
+
+                        gr.HTML('</div>')
+
+                        # Supported Stocks Card
+                        gr.HTML('<div class="card">')
+                        gr.Markdown("### 💹 支持的投资标的")
+                        gr.HTML("""
+                        <div class="stock-tickers">
+                            <span class="ticker-badge">🚗 TSLA 特斯拉</span>
+                            <span class="ticker-badge">🎮 NVDA 英伟达</span>
+                            <span class="ticker-badge">🍎 AAPL 苹果</span>
+                            <span class="ticker-badge">💻 MSFT 微软</span>
+                            <span class="ticker-badge">🔍 GOOGL 谷歌</span>
+                        </div>
+                        """)
+                        gr.HTML('</div>')
+
+                    # Right column - How it works and Output
+                    with gr.Column(scale=1, min_width=400):
+                        # How it works Card
+                        gr.HTML('<div class="card">')
+                        gr.Markdown("### ⚙️ 工作原理")
+                        gr.HTML("""
+                        <div class="steps-container">
+                            <div class="step-card">
+                                <div class="step-number">1</div>
+                                <div class="step-title">宏观经济分析</div>
+                                <div class="step-desc">GDP、通胀、利率等指标</div>
+                            </div>
+                            <div class="step-card">
+                                <div class="step-number">2</div>
+                                <div class="step-title">行业分析</div>
+                                <div class="step-desc">行业趋势、竞争格局</div>
+                            </div>
+                            <div class="step-card">
+                                <div class="step-number">3</div>
+                                <div class="step-title">公司分析</div>
+                                <div class="step-desc">财务健康、技术指标</div>
+                            </div>
+                            <div class="step-card">
+                                <div class="step-number">4</div>
+                                <div class="step-title">报告合成</div>
+                                <div class="step-desc">生成完整投资建议</div>
+                            </div>
+                        </div>
+                        """)
+                        gr.HTML('</div>')
+
+                        # Output Card
+                        gr.HTML('<div class="card" id="report_output">')
+                        gr.Markdown("### 📄 分析报告")
+                        report_output = gr.Markdown(
+                            label="",
+                            elem_id="report_output",
+                            value="""
 <div style="text-align: center; padding: 40px; color: #6c757d;">
     <div style="font-size: 48px; margin-bottom: 20px;">📊</div>
     <h3 style="margin-bottom: 10px;">准备生成报告</h3>
     <p>在左侧输入股票或公司名称，点击"开始分析"获取详细的投资研究报告</p>
 </div>
 """
-                )
-                gr.HTML('</div>')
+                        )
+                        gr.HTML('</div>')
 
         # Footer
         gr.HTML("""
@@ -498,7 +653,7 @@ def create_demo() -> gr.Blocks:
         </div>
         """)
 
-        # Set up click handler with streaming support
+        # Set up event handlers for single analysis mode
         analyze_btn.click(
             fn=run_analysis_streaming,
             inputs=query_input,

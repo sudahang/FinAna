@@ -174,3 +174,223 @@ news_list = get_stock_news("sh600519", limit=10)
 - **队列支持**: Gradio 使用 `demo.queue(max_size=10)` 处理长任务
 - **进度显示**: `show_progress="full"` 显示加载指示器
 - **错误处理**: 区分超时错误和其他 API 错误，显示友好提示
+
+## 多轮对话功能
+
+系统支持多轮对话，保留对话历史和上下文，允许用户进行连续追问。
+
+### 对话记忆架构
+
+```
+memory/
+├── __init__.py                  # 模块导出
+└── conversation_memory.py       # 对话记忆管理
+```
+
+### 核心组件
+
+1. **ConversationMemory**: 会话管理器
+   - 基于 session_id 管理对话
+   - 自动清理过期会话 (TTL: 1 小时)
+   - LRU 淘汰机制 (默认最多 1000 个会话)
+
+2. **ConversationSession**: 单个会话
+   - 存储消息历史
+   - 存储上下文数据 (股票、国家、行业等)
+
+3. **Message**: 单条消息
+   - 角色 (user/assistant)
+   - 内容、时间戳、元数据
+
+### API 端点
+
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/analysis/chat` | POST | 聊天端点，支持 session_id 和 history |
+| `/analysis/session/{id}` | GET | 获取会话信息 |
+| `/analysis/session/{id}/history` | GET | 获取会话历史 |
+| `/analysis/session/{id}` | DELETE | 清除会话 |
+
+### 使用示例
+
+```python
+from memory.conversation_memory import get_conversation_memory
+from workflows.langgraph_workflow import AIResearchWorkflow
+
+# 获取对话记忆
+memory = get_conversation_memory()
+
+# 创建会话
+session_id = memory.create_session()
+
+# 第一轮对话
+workflow = AIResearchWorkflow()
+report1 = workflow.execute("分析特斯拉", session_id=session_id)
+
+# 第二轮对话 (带历史)
+history = memory.get_history(session_id)
+report2 = workflow.execute(
+    "它的估值合理吗？",
+    session_id=session_id,
+    conversation_history=history
+)
+
+# 获取存储的上下文
+context = memory.get_context(session_id)
+# {'symbol': 'TSLA', 'country': 'us', 'sector': '汽车', ...}
+```
+
+### Web UI
+
+启动 Web UI 后，访问 **💬 多轮对话** 标签页体验对话功能：
+
+```bash
+python -m web_ui.app
+```
+
+支持的操作：
+- 连续追问，系统自动保留上下文
+- 清除对话，开始新话题
+- 撤回上一条消息
+
+### 测试
+
+```bash
+# 测试多轮对话功能
+python test_multi_turn_chat.py
+```
+
+## 报告存储和缓存
+
+系统使用 Redis 和 SeaweedFS 实现报告缓存和持久化存储，提高相似查询的响应速度。
+
+### 架构
+
+```
+storage/
+├── __init__.py              # 模块导出
+├── redis_client.py          # Redis 客户端 (缓存摘要)
+├── seaweed_client.py        # SeaweedFS 客户端 (存储完整报告)
+└── report_cache.py          # 报告缓存服务
+```
+
+### 工作流程
+
+```
+用户查询 → 检查 Redis 缓存 → (未命中) → 执行 AI 分析 → 存储到 SeaweedFS → 缓存摘要到 Redis
+         ↓
+    (命中) → 返回缓存报告
+```
+
+### 启动存储服
+
+```bash
+# 启动 Redis 和 SeaweedFS
+docker-compose up -d
+
+# 验证服务
+docker-compose ps
+
+# 查看日志
+docker-compose logs -f redis
+docker-compose logs -f seaweedfs
+```
+
+### 服务端口
+
+| 服务 | 端口 | 用途 |
+|------|------|------|
+| Redis | 6379 | 缓存摘要和索引 |
+| SeaweedFS Master | 9333 | 集群管理 |
+| SeaweedFS Filer | 8888 | 文件访问 |
+| SeaweedFS Volume | 8080 | 数据卷 |
+
+### 使用示例
+
+```python
+from storage.report_cache import get_report_cache_service
+
+# 获取缓存服务
+cache_service = get_report_cache_service()
+
+# 检查缓存
+cached_report = cache_service.find_cached_report("分析特斯拉")
+if cached_report:
+    print(f"找到缓存报告：{cached_report.recommendation}")
+
+# 缓存新报告
+report_id, success = cache_service.cache_report(
+    report=report,
+    query="分析特斯拉",
+    symbol="TSLA",
+    country="us"
+)
+```
+
+### API 端点
+
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/analysis/cache/search?query=xxx` | GET | 搜索相似缓存报告 |
+| `/analysis/cache/report/{id}` | GET | 获取指定缓存报告 |
+| `/analysis/cache/stats` | GET | 获取缓存统计 |
+| `/analysis/cache/clear` | POST | 清除缓存 |
+| `/analysis/cache/health` | GET | 检查缓存健康状态 |
+
+### 配置
+
+```bash
+# 环境变量
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=  # 可选
+
+SEAWEED_FILER_URL=http://localhost:8888
+SEAWEED_MASTER_URL=http://localhost:9333
+
+ENABLE_REPORT_CACHE=true
+REPORT_CACHE_TTL=604800  # 7 天
+```
+
+### 测试
+
+```bash
+# 测试存储和缓存功能
+python test_storage_cache.py
+```
+
+### 缓存策略
+
+- **相似性匹配**: 基于查询哈希和关键词匹配
+- **符号索引**: 按股票代码索引报告
+- **自动过期**: 默认 7 天 TTL
+- **容量限制**: 最多缓存 1000 份报告/符号
+
+## 测试
+
+```bash
+# 运行所有测试 (不依赖外部服务)
+python test_full_workflow.py    # 7/7 测试通过
+python test_storage_mock.py     # 7/7 测试通过
+python test_multi_turn_chat.py  # 多轮对话测试
+
+# 运行真实存储测试 (需要 Docker)
+python test_storage_cache.py
+
+# AI Agent 集成测试 (需要 API Key)
+python test_ai_agent.py
+```
+
+### 测试状态
+
+| 测试项 | 状态 | 说明 |
+|--------|------|------|
+| 模块导入 | ✅ | 所有 Python 模块正常导入 |
+| 对话记忆 | ✅ | 多轮对话记忆功能正常 |
+| 输入路由 | ✅ | 用户查询识别正常 |
+| 工作流初始化 | ✅ | LangGraph 工作流正常 |
+| 存储服务类 | ✅ | Redis/SeaweedFS 客户端正常 |
+| 缓存逻辑 | ✅ | 报告缓存逻辑正常 |
+| API 模型 | ✅ | FastAPI 请求/响应模型正常 |
+
+**注意**: 输入路由测试需要有效的 DashScope API Key，如果没有配置会显示 API 错误，但核心功能正常。
