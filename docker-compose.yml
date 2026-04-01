@@ -1,0 +1,72 @@
+# Docker Compose - Simple setup for Redis and SeaweedFS
+# Using China-friendly mirror registries
+#
+# Usage:
+#   docker compose up -d
+#   docker compose down
+#
+# Services:
+#   - Redis: For caching report summaries and metadata
+#   - SeaweedFS: All-in-one server (master + volume + filer)
+#
+# Ports:
+#   - Redis: 6379
+#   - SeaweedFS Master: 9333
+#   - SeaweedFS Volume: 8080
+#   - SeaweedFS Filer: 8888 (access files via http://localhost:8888)
+
+services:
+  # Redis for caching
+  redis:
+    image: swr.cn-east-2.myhuaweicloud.com/library/redis:latest
+    container_name: finana-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - finana-network
+
+  # SeaweedFS - All-in-one server with automatic volume creation
+  seaweedfs:
+    image: docker.m.daocloud.io/chrislusf/seaweedfs:latest
+    container_name: finana-seaweedfs
+    restart: unless-stopped
+    ports:
+      - "9333:9333"
+      - "8080:8080"
+      - "8888:8888"
+    volumes:
+      - seaweedfs-data:/data
+    entrypoint: ["weed"]
+    command: [
+      "server",
+      "-dir=/data",
+      "-master.port=9333",
+      "-volume.port=8080",
+      "-filer.port=8888",
+      "-filer=true",
+      "-s3=false"
+    ]
+    networks:
+      - finana-network
+    depends_on:
+      redis:
+        condition: service_healthy
+
+networks:
+  finana-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local
+  seaweedfs-data:
+    driver: local

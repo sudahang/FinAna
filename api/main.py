@@ -1,8 +1,17 @@
 """FastAPI application entry point."""
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.routers.analysis import router as analysis_router
+
+# Setup logging
+from logging_config import setup_logging, get_logger
+
+setup_logging(level=logging.INFO)
+logger = get_logger(__name__)
+logger.info("FinAna API starting...")
 
 app = FastAPI(
     title="FinAna API",
