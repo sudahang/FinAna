@@ -2,9 +2,16 @@
 
 import os
 import sys
+import logging
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Setup logging
+from logging_config import setup_logging
+setup_logging(level=logging.DEBUG)
+
+logger = logging.getLogger(__name__)
 
 from data.schemas import ResearchReport
 from storage.redis_client import get_redis_client
@@ -18,6 +25,11 @@ def test_redis_connection():
     print("测试 1: Redis 连接测试")
     print("=" * 60)
 
+    trace_id = "test_" + os.urandom(4).hex()
+    from logging_config import set_trace_id
+    set_trace_id(trace_id)
+    logger.info(f"[TEST] Starting Redis connection test, trace_id={trace_id}")
+
     try:
         redis_client = get_redis_client()
         connected = redis_client.test_connection()
@@ -27,14 +39,17 @@ def test_redis_connection():
             stats = redis_client.get_stats()
             print(f"   内存使用：{stats.get('memory_used', 'N/A')}")
             print(f"   连接客户端数：{stats.get('connected_clients', 'N/A')}")
+            logger.info(f"[TEST] Redis connection test passed")
             return True
         else:
             print("❌ Redis 连接失败")
             print("   请确保 Redis 正在运行：docker-compose up -d redis")
+            logger.warning(f"[TEST] Redis connection test failed")
             return False
 
     except Exception as e:
         print(f"❌ Redis 测试失败：{e}")
+        logger.error(f"[TEST] Redis test failed: {e}")
         return False
 
 
@@ -230,7 +245,43 @@ def test_report_cache_service():
         print(f"缓存统计：{stats}")
 
         # Create test report
+        from data.schemas import MacroContext, IndustryContext, CompanyAnalysis, CompanyData
         report = ResearchReport(
+            query="测试查询",
+            macro_analysis=MacroContext(
+                gdp_growth=2.5,
+                inflation_rate=2.0,
+                interest_rate=4.0,
+                unemployment_rate=3.5,
+                market_sentiment="neutral",
+                summary="宏观测试"
+            ),
+            industry_analysis=IndustryContext(
+                sector_name="测试行业",
+                sector_growth=15.0,
+                competitive_landscape="竞争激烈",
+                regulatory_environment="支持政策",
+                trends=["测试趋势"],
+                outlook="positive",
+                summary="行业测试"
+            ),
+            company_analysis=CompanyAnalysis(
+                company=CompanyData(
+                    symbol="TEST",
+                    name="测试公司",
+                    sector="测试行业",
+                    market_cap=100.0,
+                    pe_ratio=20.0,
+                    current_price=50.0
+                ),
+                financial_health="良好",
+                recent_news=[],
+                technical_indicator="buy",
+                risks=["测试风险"],
+                summary="公司测试"
+            ),
+            investment_thesis="测试投资论点",
+            time_horizon="长期 (1-3 年)",
             full_report="# 测试报告\n\n这是一个测试报告内容。",
             recommendation="买入",
             target_price=100.0,

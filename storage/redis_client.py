@@ -10,6 +10,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Import trace ID utilities from logging_config
+from logging_config import get_trace_id
+
 
 class RedisClient:
     """
@@ -63,11 +66,14 @@ class RedisClient:
 
     def test_connection(self) -> bool:
         """Test Redis connection."""
+        trace_id = get_trace_id()
+        logger.info(f"[TRACE={trace_id}] Redis connection test started")
         try:
             self.client.ping()
+            logger.info(f"[TRACE={trace_id}] Redis connection test successful")
             return True
         except RedisError as e:
-            logger.error(f"Redis connection failed: {e}")
+            logger.error(f"[TRACE={trace_id}] Redis connection failed: {e}")
             return False
 
     def cache_report_summary(
@@ -89,9 +95,12 @@ class RedisClient:
         Returns:
             True if successful
         """
-        try:
-            ttl = ttl or self.default_ttl
+        trace_id = get_trace_id()
+        ttl = ttl or self.default_ttl
 
+        logger.info(f"[TRACE={trace_id}] Caching report summary: report_id={report_id}, ttl={ttl}s")
+
+        try:
             # Store summary
             key = f"report:summary:{report_id}"
             data = {
@@ -101,6 +110,7 @@ class RedisClient:
             }
             self.client.hset(key, mapping=data)
             self.client.expire(key, ttl)
+            logger.debug(f"[TRACE={trace_id}] Report summary stored: key={key}")
 
             # Index by symbol
             symbol = metadata.get("symbol", "").upper()
@@ -110,6 +120,7 @@ class RedisClient:
                 self.client.expire(index_key, ttl)
                 # Keep only recent reports
                 self.client.zremrangebyrank(index_key, 0, -self.max_cached_reports)
+                logger.debug(f"[TRACE={trace_id}] Indexed by symbol: {symbol}")
 
             # Index by country
             country = metadata.get("country", "")
@@ -117,6 +128,7 @@ class RedisClient:
                 country_key = f"report:index:country:{country}"
                 self.client.zadd(country_key, {report_id: datetime.now().timestamp()})
                 self.client.expire(country_key, ttl)
+                logger.debug(f"[TRACE={trace_id}] Indexed by country: {country}")
 
             # Index by sector
             sector = metadata.get("sector", "")
@@ -124,6 +136,7 @@ class RedisClient:
                 sector_key = f"report:index:sector:{sector}"
                 self.client.zadd(sector_key, {report_id: datetime.now().timestamp()})
                 self.client.expire(sector_key, ttl)
+                logger.debug(f"[TRACE={trace_id}] Indexed by sector: {sector}")
 
             # Store query hash for similarity search
             query = metadata.get("query", "")
@@ -137,11 +150,13 @@ class RedisClient:
                     "created_at": datetime.now().isoformat(),
                 })
                 self.client.expire(query_key, ttl)
+                logger.debug(f"[TRACE={trace_id}] Query hash stored: {query_hash[:8]}...")
 
+            logger.info(f"[TRACE={trace_id}] Report summary cached successfully: report_id={report_id}")
             return True
 
         except RedisError as e:
-            logger.error(f"Failed to cache report summary: {e}")
+            logger.error(f"[TRACE={trace_id}] Failed to cache report summary: {e}")
             return False
 
     def get_report_summary(self, report_id: str) -> Optional[dict]:
@@ -154,13 +169,16 @@ class RedisClient:
         Returns:
             Report summary data or None if not found
         """
+        trace_id = get_trace_id()
         try:
             key = f"report:summary:{report_id}"
             data = self.client.hgetall(key)
 
             if not data:
+                logger.debug(f"[TRACE={trace_id}] Report summary not found: key={key}")
                 return None
 
+            logger.debug(f"[TRACE={trace_id}] Report summary retrieved: key={key}")
             return {
                 "summary": data.get("summary", ""),
                 "metadata": json.loads(data.get("metadata", "{}")),
@@ -168,7 +186,7 @@ class RedisClient:
             }
 
         except RedisError as e:
-            logger.error(f"Failed to get report summary: {e}")
+            logger.error(f"[TRACE={trace_id}] Failed to get report summary: {e}")
             return None
 
     def find_similar_reports(
@@ -188,6 +206,9 @@ class RedisClient:
         Returns:
             List of similar report summaries
         """
+        trace_id = get_trace_id()
+        logger.info(f"[TRACE={trace_id}] Finding similar reports: query='{query[:50]}...', symbol={symbol}, limit={limit}")
+
         results = []
 
         try:
@@ -199,13 +220,20 @@ class RedisClient:
             if self.client.exists(query_key):
                 data = self.client.hgetall(query_key)
                 if data:
+                    logger.info(f"[TRACE={trace_id}] Exact query match found: query_hash={query_hash[:8]}...")
+                    # Get full metadata from report:summary key
+                    report_id = data.get("report_id", "")
+                    summary_data = self.get_report_summary(report_id)
+                    metadata = summary_data.get("metadata", {}) if summary_data else {}
+
                     results.append({
-                        "report_id": data.get("report_id", ""),
+                        "report_id": report_id,
                         "query": data.get("query", ""),
                         "summary": data.get("summary", ""),
                         "created_at": data.get("created_at", ""),
                         "match_type": "exact",
                         "similarity": 1.0,
+                        "metadata": metadata,
                     })
                     if limit == 1:
                         return results
@@ -214,7 +242,13 @@ class RedisClient:
             if symbol:
                 symbol = symbol.upper()
                 index_key = f"report:index:symbol:{symbol}"
+                logger.debug(f"[TRACE={trace_id}] Checking symbol index: {index_key}")
+                index_exists = self.client.exists(index_key)
+                logger.debug(f"[TRACE={trace_id}] Symbol index exists: {index_exists}")
                 report_ids = self.client.zrevrange(index_key, 0, limit - 1)
+
+                if report_ids:
+                    logger.debug(f"[TRACE={trace_id}] Found {len(report_ids)} reports by symbol: {symbol}, report_ids: {report_ids}")
 
                 for report_id in report_ids:
                     summary_data = self.get_report_summary(report_id)
@@ -232,6 +266,7 @@ class RedisClient:
             # Find by keywords (simple keyword matching)
             keywords = self._extract_keywords(query)
             if keywords:
+                logger.debug(f"[TRACE={trace_id}] Searching by keywords: {keywords}")
                 keyword_results = self._search_by_keywords(keywords, limit)
                 for result in keyword_results:
                     # Avoid duplicates
@@ -244,10 +279,11 @@ class RedisClient:
                 reverse=True
             )
 
+            logger.info(f"[TRACE={trace_id}] Found {len(results)} similar reports")
             return results[:limit]
 
         except RedisError as e:
-            logger.error(f"Failed to find similar reports: {e}")
+            logger.error(f"[TRACE={trace_id}] Failed to find similar reports: {e}")
             return []
 
     def _hash_query(self, query: str) -> str:

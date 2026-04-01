@@ -7,20 +7,18 @@
 #
 # Services:
 #   - Redis: For caching report summaries and metadata
-#   - SeaweedFS: All-in-one (master + volume + filer) for storing reports
+#   - SeaweedFS: All-in-one server (master + volume + filer)
 #
 # Ports:
 #   - Redis: 6379
 #   - SeaweedFS Master: 9333
+#   - SeaweedFS Volume: 8080
 #   - SeaweedFS Filer: 8888 (access files via http://localhost:8888)
 
 services:
   # Redis for caching
   redis:
-    image: dockerproxy.com/redis:7-alpine
-    # Alternative mirrors:
-    # image: registry.cn-hangzhou.aliyuncs.com/library/redis:7-alpine
-    # image: swr.cn-east-3.myhuaweicloud.com/library/redis:7-alpine
+    image: swr.cn-east-2.myhuaweicloud.com/library/redis:latest
     container_name: finana-redis
     restart: unless-stopped
     ports:
@@ -36,32 +34,27 @@ services:
     networks:
       - finana-network
 
-  # SeaweedFS - All-in-one setup
+  # SeaweedFS - All-in-one server with automatic volume creation
   seaweedfs:
-    image: dockerproxy.com/chrislusf/seaweedfs:latest
-    # Alternative: registry.cn-shanghai.aliyuncs.com/seaweedfs/seaweedfs:latest
+    image: docker.m.daocloud.io/chrislusf/seaweedfs:latest
     container_name: finana-seaweedfs
     restart: unless-stopped
     ports:
-      # Master API
       - "9333:9333"
-      # Volume server
       - "8080:8080"
-      # Filer (file access)
       - "8888:8888"
     volumes:
       - seaweedfs-data:/data
     entrypoint: ["weed"]
-    command: >
-      -logtostderr=true
-      master
-      -ip=0.0.0.0
-      -port=9333
-      -mdir=/data/master
-      -volumeSizeLimit=1024
-      &
-      weed -logtostderr=true volume -master=127.0.0.1:9333 -ip=0.0.0.0 -port=8080 -dir=/data/volume -max=0 &
-      weed -logtostderr=true filer -master=127.0.0.1:9333 -ip=0.0.0.0 -port=8888 -filer.maxMB=64 -meta=leveldb -filer.dataStore=/data/filer
+    command: [
+      "server",
+      "-dir=/data",
+      "-master.port=9333",
+      "-volume.port=8080",
+      "-filer.port=8888",
+      "-filer=true",
+      "-s3=false"
+    ]
     networks:
       - finana-network
     depends_on:

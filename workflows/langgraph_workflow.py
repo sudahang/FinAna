@@ -12,6 +12,10 @@ from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from memory.conversation_memory import ConversationMemory, get_conversation_memory, format_history_for_llm
 from storage.report_cache import ReportCacheService, get_report_cache_service
+from logging_config import get_trace_id, set_trace_id
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class WorkflowState(TypedDict):
@@ -112,6 +116,10 @@ class AIResearchWorkflow:
         session_id = state.get("session_id")
         conversation_history = state.get("conversation_history", [])
 
+        # Get trace ID from context
+        trace_id = get_trace_id()
+        logger.info(f"[TRACE={trace_id}] Detecting parameters from query")
+
         # Use Input Router Agent to parse the query
         params = self.input_router.parse_query(query)
 
@@ -121,6 +129,7 @@ class AIResearchWorkflow:
 
         # Log detection info
         detection_info = f"识别结果：国家={country}, 股票={symbol}, 行业={sector}, 置信度={params.get('confidence', 0):.0%}"
+        logger.info(f"[TRACE={trace_id}] {detection_info}")
 
         # Store context in conversation memory if session exists
         if session_id:
@@ -232,10 +241,12 @@ class AIResearchWorkflow:
     def _run_macro_analysis(self, state: WorkflowState) -> dict:
         """Run macro economic analysis."""
         country = state.get("country", "us")
+        trace_id = get_trace_id()
+        logger.info(f"[TRACE={trace_id}] Running macro analysis for country: {country}")
+
         try:
-            print(f"🔍 正在分析宏观经济 ({country})...")
             macro_context = self.macro_analyst.analyze(country)
-            print(f"✅ 宏观经济分析完成")
+            logger.info(f"[TRACE={trace_id}] Macro analysis completed: GDP={macro_context.gdp_growth}%, Inflation={macro_context.inflation_rate}%")
             return {
                 "macro_context": macro_context,
                 "messages": state.get("messages", []) + [
@@ -243,7 +254,7 @@ class AIResearchWorkflow:
                 ]
             }
         except Exception as e:
-            print(f"❌ 宏观分析失败：{e}")
+            logger.error(f"[TRACE={trace_id}] Macro analysis failed: {e}")
             return {
                 "error": f"宏观分析失败：{str(e)}",
                 "messages": state.get("messages", []) + [f"❌ 宏观分析失败：{str(e)}"]
@@ -253,10 +264,12 @@ class AIResearchWorkflow:
         """Run industry analysis."""
         sector = state.get("sector", "科技")
         query = state.get("query", "")
+        trace_id = get_trace_id()
+        logger.info(f"[TRACE={trace_id}] Running industry analysis for sector: {sector}")
+
         try:
-            print(f"🔍 正在分析行业 ({sector})...")
             industry_context = self.industry_analyst.analyze_with_context(query)
-            print(f"✅ 行业分析完成")
+            logger.info(f"[TRACE={trace_id}] Industry analysis completed: growth={industry_context.sector_growth}%, outlook={industry_context.outlook}")
             return {
                 "industry_context": industry_context,
                 "messages": state.get("messages", []) + [
@@ -264,7 +277,7 @@ class AIResearchWorkflow:
                 ]
             }
         except Exception as e:
-            print(f"❌ 行业分析失败：{e}")
+            logger.error(f"[TRACE={trace_id}] Industry analysis failed: {e}")
             return {
                 "error": f"行业分析失败：{str(e)}",
                 "messages": state.get("messages", []) + [f"❌ 行业分析失败：{str(e)}"]
@@ -273,10 +286,12 @@ class AIResearchWorkflow:
     def _run_equity_analysis(self, state: WorkflowState) -> dict:
         """Run equity analysis."""
         symbol = state.get("symbol", "TSLA")
+        trace_id = get_trace_id()
+        logger.info(f"[TRACE={trace_id}] Running equity analysis for symbol: {symbol}")
+
         try:
-            print(f"🔍 正在分析公司 ({symbol})...")
             company_analysis = self.equity_analyst.analyze(symbol)
-            print(f"✅ 公司分析完成")
+            logger.info(f"[TRACE={trace_id}] Equity analysis completed: company={company_analysis.company.name}, current_price=${company_analysis.company.current_price:.2f}")
             return {
                 "company_analysis": company_analysis,
                 "messages": state.get("messages", []) + [
@@ -284,7 +299,7 @@ class AIResearchWorkflow:
                 ]
             }
         except Exception as e:
-            print(f"❌ 公司分析失败：{e}")
+            logger.error(f"[TRACE={trace_id}] Equity analysis failed: {e}")
             return {
                 "error": f"公司分析失败：{str(e)}",
                 "messages": state.get("messages", []) + [f"❌ 公司分析失败：{str(e)}"]
@@ -297,22 +312,24 @@ class AIResearchWorkflow:
         macro_context = state.get("macro_context")
         industry_context = state.get("industry_context")
         company_analysis = state.get("company_analysis")
+        trace_id = get_trace_id()
 
         if not all([macro_context, industry_context, company_analysis]):
+            logger.error(f"[TRACE={trace_id}] Missing required analysis results for report synthesis")
             return {
                 "error": "缺少必要的分析结果，无法生成报告",
                 "messages": state.get("messages", []) + ["❌ 缺少分析结果，无法生成报告"]
             }
 
         try:
-            print("📝 正在合成最终报告...")
+            logger.info(f"[TRACE={trace_id}] Synthesizing final report")
             report = self.report_synthesizer.synthesize(
                 query=query,
                 macro_context=macro_context,
                 industry_context=industry_context,
                 company_analysis=company_analysis
             )
-            print(f"✅ 报告生成完成，长度：{len(report.full_report)} 字符")
+            logger.info(f"[TRACE={trace_id}] Report synthesized successfully, length: {len(report.full_report)} chars, recommendation: {report.recommendation}")
 
             # Store analysis results in conversation memory for future reference
             if session_id:
@@ -332,7 +349,7 @@ class AIResearchWorkflow:
                 ]
             }
         except Exception as e:
-            print(f"❌ 报告合成失败：{e}")
+            logger.error(f"[TRACE={trace_id}] Report synthesis failed: {e}")
             return {
                 "error": f"报告合成失败：{str(e)}",
                 "messages": state.get("messages", []) + [f"❌ 报告合成失败：{str(e)}"]
@@ -355,12 +372,21 @@ class AIResearchWorkflow:
         Returns:
             Complete ResearchReport with AI analysis.
         """
+        # Generate trace ID for this request
+        import uuid
+        trace_id = str(uuid.uuid4())[:8]
+
+        # Set trace ID in context for propagation to storage layer
+        set_trace_id(trace_id)
+
+        logger.info(f"[TRACE={trace_id}] Starting AI research workflow: query='{query[:50]}...'")
+
         # Step 1: Try to get cached report first (if cache is enabled)
         if self.enable_cache and self.report_cache:
-            print("🔍 正在检查缓存的报告...")
+            logger.info(f"[TRACE={trace_id}] Checking cache for similar reports")
             cached_report = self.report_cache.find_cached_report(query)
             if cached_report:
-                print("✅ 找到缓存的报告，直接返回")
+                logger.info(f"[TRACE={trace_id}] CACHE HIT: Found cached report, returning directly")
                 # Still add to conversation history
                 if session_id:
                     self.memory.add_message(session_id, "user", query)
@@ -374,13 +400,17 @@ class AIResearchWorkflow:
                             "from_cache": True,
                         }
                     )
+                logger.info(f"[TRACE={trace_id}] Workflow completed (from cache)")
                 return cached_report
+            else:
+                logger.info(f"[TRACE={trace_id}] CACHE MISS: No similar report found, will generate new one")
 
         # Get or create session if session_id provided
         if session_id:
             session = self.memory.get_or_create_session(session_id)
             # Add user query to conversation history
             self.memory.add_message(session_id, "user", query)
+            logger.debug(f"[TRACE={trace_id}] Session initialized: {session_id}")
 
         # Initialize state
         initial_state: WorkflowState = {
@@ -399,15 +429,15 @@ class AIResearchWorkflow:
         }
 
         # Run the workflow
+        logger.info(f"[TRACE={trace_id}] Invoking LangGraph workflow")
         final_state = self.graph.invoke(initial_state)
 
         # Log execution trace
-        print("执行轨迹:")
-        for msg in final_state.get("messages", []):
-            print(f"  {msg}")
+        logger.info(f"[TRACE={trace_id}] Workflow completed, messages: {len(final_state.get('messages', []))} steps")
 
         # Check for errors
         if final_state.get("error"):
+            logger.error(f"[TRACE={trace_id}] Workflow error: {final_state['error']}")
             if session_id:
                 self.memory.add_message(session_id, "assistant", f"分析失败：{final_state['error']}")
             raise RuntimeError(final_state["error"])
@@ -415,6 +445,7 @@ class AIResearchWorkflow:
         # Return the final report
         report = final_state.get("report")
         if not report:
+            logger.error(f"[TRACE={trace_id}] Workflow completed but no report generated")
             raise RuntimeError("工作流执行成功但未生成报告")
 
         # Add assistant response to conversation history
@@ -437,6 +468,7 @@ class AIResearchWorkflow:
                 sector = final_state.get("sector", "")
                 symbol = final_state.get("symbol", "")
 
+                logger.info(f"[TRACE={trace_id}] Caching newly generated report: symbol={symbol}, country={country}")
                 report_id, success = self.report_cache.cache_report(
                     report=report,
                     query=query,
@@ -446,7 +478,7 @@ class AIResearchWorkflow:
                 )
 
                 if success:
-                    print(f"✅ 报告已缓存，ID: {report_id}")
+                    logger.info(f"[TRACE={trace_id}] Report cached successfully: report_id={report_id}")
 
                     # Store report ID in session context
                     if session_id:
@@ -455,9 +487,13 @@ class AIResearchWorkflow:
                             "symbol": symbol,
                             "cached_at": datetime.now().isoformat(),
                         })
-            except Exception as e:
-                print(f"⚠️ 缓存报告失败：{e}")
+                else:
+                    logger.warning(f"[TRACE={trace_id}] Failed to cache report")
 
+            except Exception as e:
+                logger.warning(f"[TRACE={trace_id}] Error while caching report: {e}")
+
+        logger.info(f"[TRACE={trace_id}] Workflow execution completed successfully")
         return report
 
 

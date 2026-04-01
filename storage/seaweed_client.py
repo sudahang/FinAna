@@ -8,6 +8,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Import trace ID utilities from logging_config
+from logging_config import get_trace_id
+
 
 class SeaweedClient:
     """
@@ -43,14 +46,21 @@ class SeaweedClient:
 
     def test_connection(self) -> bool:
         """Test SeaweedFS connection."""
+        trace_id = get_trace_id()
+        logger.info(f"[TRACE={trace_id}] SeaweedFS connection test started")
         try:
             response = self.session.get(
                 f"{self.filer_url}/",
                 timeout=self.timeout
             )
-            return response.status_code < 400
+            if response.status_code < 400:
+                logger.info(f"[TRACE={trace_id}] SeaweedFS connection test successful")
+                return True
+            else:
+                logger.warning(f"[TRACE={trace_id}] SeaweedFS connection test returned status {response.status_code}")
+                return False
         except requests.RequestException as e:
-            logger.error(f"SeaweedFS connection failed: {e}")
+            logger.error(f"[TRACE={trace_id}] SeaweedFS connection failed: {e}")
             return False
 
     def upload_report(
@@ -72,8 +82,12 @@ class SeaweedClient:
         Returns:
             File ID (fid) if successful, None otherwise
         """
+        trace_id = get_trace_id()
+        logger.info(f"[TRACE={trace_id}] Uploading report to SeaweedFS: report_id={report_id}, directory={directory}")
+
         try:
             # Create directory if not exists
+            logger.debug(f"[TRACE={trace_id}] Ensuring directory exists: {directory}")
             self._ensure_directory(directory)
 
             # Prepare file path
@@ -97,7 +111,16 @@ class SeaweedClient:
 
             # Add metadata as custom headers
             for key, value in metadata.items():
+                # Encode non-ASCII characters
+                if isinstance(value, str):
+                    try:
+                        value.encode('ascii')
+                    except UnicodeEncodeError:
+                        value = value.encode('utf-8').hex()
                 headers[f"X-Seaweedfs-Meta-{key}"] = str(value)
+
+            content_size = len(report_content)
+            logger.debug(f"[TRACE={trace_id}] Uploading to {upload_url}, content size: {content_size} bytes")
 
             response = self.session.put(
                 upload_url,
@@ -107,14 +130,14 @@ class SeaweedClient:
             )
 
             if response.status_code in (200, 201):
-                logger.info(f"Report uploaded: {file_path}")
+                logger.info(f"[TRACE={trace_id}] Report uploaded successfully: {file_path} ({content_size} bytes)")
                 return report_id
             else:
-                logger.error(f"Upload failed: {response.status_code} - {response.text}")
+                logger.error(f"[TRACE={trace_id}] Upload failed: {response.status_code} - {response.text[:200]}")
                 return None
 
         except requests.RequestException as e:
-            logger.error(f"Failed to upload report: {e}")
+            logger.error(f"[TRACE={trace_id}] Failed to upload report: {e}")
             return None
 
     def upload_file(
@@ -178,26 +201,31 @@ class SeaweedClient:
         Returns:
             Report content if successful, None otherwise
         """
-        try:
-            file_path = f"{directory}/{report_id}.md"
-            download_url = f"{self.filer_url}{file_path}"
+        trace_id = get_trace_id()
+        file_path = f"{directory}/{report_id}.md"
+        download_url = f"{self.filer_url}{file_path}"
 
+        logger.info(f"[TRACE={trace_id}] Downloading report from SeaweedFS: {file_path}")
+
+        try:
             response = self.session.get(
                 download_url,
                 timeout=self.timeout
             )
 
             if response.status_code == 200:
+                content_size = len(response.text)
+                logger.info(f"[TRACE={trace_id}] Report downloaded successfully: {content_size} bytes")
                 return response.text
             elif response.status_code == 404:
-                logger.warning(f"Report not found: {file_path}")
+                logger.warning(f"[TRACE={trace_id}] Report not found: {file_path}")
                 return None
             else:
-                logger.error(f"Download failed: {response.status_code}")
+                logger.error(f"[TRACE={trace_id}] Download failed: status={response.status_code}")
                 return None
 
         except requests.RequestException as e:
-            logger.error(f"Failed to download report: {e}")
+            logger.error(f"[TRACE={trace_id}] Failed to download report: {e}")
             return None
 
     def download_file(self, file_path: str) -> Optional[bytes]:

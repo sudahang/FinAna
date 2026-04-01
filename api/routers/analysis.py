@@ -1,6 +1,7 @@
 """Analysis API router."""
 
 import uuid
+import logging
 from fastapi import APIRouter, HTTPException
 from api.models import (
     AnalysisRequest,
@@ -16,6 +17,9 @@ from memory.conversation_memory import get_conversation_memory
 from storage.report_cache import get_report_cache_service
 from storage.redis_client import get_redis_client
 from storage.seaweed_client import get_seaweed_client
+from logging_config import get_trace_id, set_trace_id
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -41,10 +45,16 @@ async def start_analysis(request: AnalysisRequest) -> AnalysisResponse:
     Returns:
         AnalysisResponse with task ID and initial status.
     """
+    # Generate trace ID for request tracking
+    trace_id = str(uuid.uuid4())[:8]
+    set_trace_id(trace_id)
+
     task_id = str(uuid.uuid4())
 
     # Use session_id from request or generate new one
     session_id = request.session_id or str(uuid.uuid4())
+
+    logger.info(f"[TRACE={trace_id}] Starting analysis: task_id={task_id}, query='{request.query[:50]}...', session_id={session_id}")
 
     # Store task as pending
     task_store[task_id] = {
@@ -58,7 +68,9 @@ async def start_analysis(request: AnalysisRequest) -> AnalysisResponse:
     # Execute workflow in background (simplified for demo)
     # In production, use Celery or similar for background tasks
     try:
+        logger.info(f"[TRACE={trace_id}] Creating AIResearchWorkflow instance")
         workflow = AIResearchWorkflow()
+        logger.info(f"[TRACE={trace_id}] Executing workflow")
         report = workflow.execute(request.query, session_id=session_id)
 
         task_store[task_id].update({
@@ -67,7 +79,11 @@ async def start_analysis(request: AnalysisRequest) -> AnalysisResponse:
             "recommendation": report.recommendation,
             "target_price": report.target_price
         })
+
+        logger.info(f"[TRACE={trace_id}] Analysis completed successfully: task_id={task_id}, recommendation={report.recommendation}")
+
     except Exception as e:
+        logger.error(f"[TRACE={trace_id}] Analysis failed: task_id={task_id}, error={str(e)}")
         task_store[task_id].update({
             "status": "failed",
             "error": str(e)
@@ -95,16 +111,26 @@ async def chat(request: ChatRequest) -> ChatResponse:
     Returns:
         ChatResponse with analysis and session ID.
     """
+    # Generate trace ID for request tracking
+    trace_id = str(uuid.uuid4())[:8]
+    set_trace_id(trace_id)
+
     # Get or create session
     session_id = request.session_id or str(uuid.uuid4())
 
+    logger.info(f"[TRACE={trace_id}] Chat request: session_id={session_id}, query='{request.query[:50]}...', use_cache={request.use_cache}")
+
     # Get conversation history from memory if available
     history = conversation_memory.get_history(session_id)
+    if history:
+        logger.debug(f"[TRACE={trace_id}] Retrieved conversation history: {len(history)} messages")
 
     # Execute workflow with session and history
     try:
         # Create workflow with cache enabled/disabled
+        logger.info(f"[TRACE={trace_id}] Creating AIResearchWorkflow (cache={request.use_cache})")
         workflow = AIResearchWorkflow(enable_cache=request.use_cache)
+        logger.info(f"[TRACE={trace_id}] Executing workflow with session")
         report = workflow.execute(
             query=request.query,
             session_id=session_id,
@@ -115,7 +141,6 @@ async def chat(request: ChatRequest) -> ChatResponse:
         updated_history = conversation_memory.get_history(session_id)
 
         # Check if report was served from cache
-        # (If the same query was cached, it would be returned immediately)
         from_cache = False
         if request.use_cache:
             cache_service = _get_cache_service()
@@ -127,6 +152,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 )
                 if similar and similar[0].get("similarity", 0) == 1.0:
                     from_cache = True
+                    logger.info(f"[TRACE={trace_id}] Report served from cache")
+
+        logger.info(f"[TRACE={trace_id}] Chat response: session_id={session_id}, from_cache={from_cache}, recommendation={report.recommendation}")
 
         return ChatResponse(
             query=request.query,
@@ -139,6 +167,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         )
 
     except Exception as e:
+        logger.error(f"[TRACE={trace_id}] Chat failed: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Analysis failed: {str(e)}"
@@ -299,9 +328,13 @@ async def search_cached_reports(
     Returns:
         List of similar cached reports
     """
+    trace_id = get_trace_id()
+    logger.info(f"[TRACE={trace_id}] Searching cached reports: query='{query[:50]}...', symbol={symbol}, limit={limit}")
+
     cache_service = _get_cache_service()
 
     if not cache_service or not cache_service.enable_cache:
+        logger.warning(f"[TRACE={trace_id}] Cache service not available")
         raise HTTPException(status_code=503, detail="Cache service not available")
 
     # Find similar reports
@@ -310,6 +343,8 @@ async def search_cached_reports(
         symbol=symbol,
         limit=limit,
     )
+
+    logger.info(f"[TRACE={trace_id}] Found {len(similar_reports)} similar reports")
 
     return [
         CachedReportResponse(
@@ -338,23 +373,33 @@ async def get_cached_report(
     Returns:
         Cached report information
     """
+    trace_id = get_trace_id()
+    logger.info(f"[TRACE={trace_id}] Getting cached report: report_id={report_id}, include_full={include_full}")
+
     cache_service = _get_cache_service()
 
     if not cache_service or not cache_service.enable_cache:
+        logger.warning(f"[TRACE={trace_id}] Cache service not available")
         raise HTTPException(status_code=503, detail="Cache service not available")
 
     # Get summary from Redis
+    logger.debug(f"[TRACE={trace_id}] Getting report summary from Redis")
     summary_data = cache_service.redis.get_report_summary(report_id)
 
     if not summary_data:
+        logger.warning(f"[TRACE={trace_id}] Report not found in Redis: report_id={report_id}")
         raise HTTPException(status_code=404, detail="Report not found in cache")
 
     # Get full report if requested
     full_report = None
     if include_full:
+        logger.debug(f"[TRACE={trace_id}] Downloading full report from SeaweedFS")
         full_report = cache_service._download_cached_report(report_id)
         if not full_report:
+            logger.warning(f"[TRACE={trace_id}] Report content not found in SeaweedFS: report_id={report_id}")
             raise HTTPException(status_code=404, detail="Report content not found")
+
+    logger.info(f"[TRACE={trace_id}] Cached report retrieved successfully")
 
     return CachedReportResponse(
         report_id=report_id,
@@ -374,12 +419,18 @@ async def get_cache_stats() -> CacheStatsResponse:
     Returns:
         Cache statistics including Redis and SeaweedFS info
     """
+    trace_id = get_trace_id()
+    logger.info(f"[TRACE={trace_id}] Getting cache statistics")
+
     cache_service = _get_cache_service()
 
     if not cache_service:
+        logger.warning(f"[TRACE={trace_id}] Cache service not available")
         raise HTTPException(status_code=503, detail="Cache service not available")
 
     stats = cache_service.get_cache_stats()
+
+    logger.info(f"[TRACE={trace_id}] Cache stats retrieved: redis={stats.get('redis', {}).get('total_cached_reports', 0)} reports")
 
     return CacheStatsResponse(
         redis=stats.get("redis", {}),
@@ -399,16 +450,22 @@ async def clear_cache() -> dict:
     Returns:
         Success message
     """
+    trace_id = get_trace_id()
+    logger.info(f"[TRACE={trace_id}] Clearing cache")
+
     cache_service = _get_cache_service()
 
     if not cache_service:
+        logger.warning(f"[TRACE={trace_id}] Cache service not available")
         raise HTTPException(status_code=503, detail="Cache service not available")
 
     success = cache_service.clear_cache()
 
     if success:
+        logger.info(f"[TRACE={trace_id}] Cache cleared successfully")
         return {"message": "Cache cleared successfully"}
     else:
+        logger.error(f"[TRACE={trace_id}] Failed to clear cache")
         raise HTTPException(status_code=500, detail="Failed to clear cache")
 
 
@@ -420,9 +477,13 @@ async def check_cache_health() -> dict:
     Returns:
         Health status for Redis and SeaweedFS
     """
+    trace_id = get_trace_id()
+    logger.info(f"[TRACE={trace_id}] Checking cache health")
+
     cache_service = _get_cache_service()
 
     if not cache_service:
+        logger.warning(f"[TRACE={trace_id}] Cache service not available")
         return {
             "status": "unavailable",
             "redis": {"connected": False},
@@ -433,6 +494,8 @@ async def check_cache_health() -> dict:
     seaweed_ok = cache_service.seaweed.test_connection()
 
     status = "healthy" if (redis_ok and seaweed_ok) else "degraded"
+
+    logger.info(f"[TRACE={trace_id}] Cache health check: status={status}, redis={redis_ok}, seaweed={seaweed_ok}")
 
     return {
         "status": status,

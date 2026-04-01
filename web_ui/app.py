@@ -7,6 +7,13 @@ from dotenv import load_dotenv
 import os
 import uuid
 
+# Setup logging
+from logging_config import setup_logging, get_logger
+
+setup_logging(level=logging.INFO)
+logger = get_logger(__name__)
+logger.info("FinAna Web UI starting...")
+
 # Load environment variables
 load_dotenv()
 
