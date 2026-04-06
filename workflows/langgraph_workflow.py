@@ -26,6 +26,7 @@ class WorkflowState(TypedDict):
     country: str
     sector: str
     symbol: str
+    query_type: str  # 'stock_analysis', 'industry_analysis', 'macro_analysis'
     macro_context: MacroContext | None
     industry_context: IndustryContext | None
     company_analysis: CompanyAnalysis | None
@@ -93,14 +94,40 @@ class AIResearchWorkflow:
         builder.add_node("equity_analysis", self._run_equity_analysis)
         builder.add_node("synthesize_report", self._run_report_synthesis)
 
-        # Define edges (execution flow)
-        # Entry point: detect parameters
-        builder.add_edge("detect_params", "macro_analysis")
-
-        # Sequential execution: Macro -> Industry -> Equity -> Synthesize
-        builder.add_edge("macro_analysis", "industry_analysis")
-        builder.add_edge("industry_analysis", "equity_analysis")
-        builder.add_edge("equity_analysis", "synthesize_report")
+        # Conditional routing based on query_type
+        builder.add_conditional_edges(
+            "detect_params",
+            self._route_after_detection,
+            {
+                "macro_analysis": "macro_analysis",
+                "industry_analysis": "industry_analysis",
+                "equity_analysis": "equity_analysis",
+                "synthesize_report": "synthesize_report",
+            }
+        )
+        builder.add_conditional_edges(
+            "macro_analysis",
+            self._route_after_macro,
+            {
+                "industry_analysis": "industry_analysis",
+                "synthesize_report": "synthesize_report",
+            }
+        )
+        builder.add_conditional_edges(
+            "industry_analysis",
+            self._route_after_industry,
+            {
+                "equity_analysis": "equity_analysis",
+                "synthesize_report": "synthesize_report",
+            }
+        )
+        builder.add_conditional_edges(
+            "equity_analysis",
+            self._route_after_equity,
+            {
+                "synthesize_report": "synthesize_report",
+            }
+        )
 
         # Final node ends the workflow
         builder.add_edge("synthesize_report", END)
@@ -126,9 +153,10 @@ class AIResearchWorkflow:
         country = params.get('country', 'us')
         symbol = params.get('symbol', 'TSLA')
         sector = params.get('sector', '科技')
+        query_type = params.get('query_type', 'stock_analysis')
 
         # Log detection info
-        detection_info = f"识别结果：国家={country}, 股票={symbol}, 行业={sector}, 置信度={params.get('confidence', 0):.0%}"
+        detection_info = f"识别结果：国家={country}, 股票={symbol}, 行业={sector}, 类型={query_type}, 置信度={params.get('confidence', 0):.0%}"
         logger.info(f"[TRACE={trace_id}] {detection_info}")
 
         # Store context in conversation memory if session exists
@@ -137,6 +165,7 @@ class AIResearchWorkflow:
                 "country": country,
                 "symbol": symbol,
                 "sector": sector,
+                "query_type": query_type,
                 "last_query": query
             })
 
@@ -145,14 +174,55 @@ class AIResearchWorkflow:
         if conversation_history and len(conversation_history) > 0:
             context_note = "\n\n**注意**: 这是一个多轮对话，之前的分析上下文已保留。"
 
+        # Determine analysis scope based on query_type
+        scope_map = {
+            'macro_analysis': ['macro'],
+            'industry_analysis': ['macro', 'industry'],
+            'stock_analysis': ['macro', 'industry', 'equity'],
+        }
+        analysis_scope = scope_map.get(query_type, ['macro', 'industry', 'equity'])
+
+        step_count = len(analysis_scope)
+        step_label = f"步骤 0/{step_count}"
+
         return {
             "country": country,
             "symbol": symbol,
             "sector": sector,
+            "query_type": query_type,
             "messages": state.get("messages", []) + [
-                f"### 🎯 步骤 0/4: 查询分析完成\n\n- {detection_info}{context_note}"
+                f"### 🎯 {step_label}: 查询分析完成\n\n- {detection_info}{context_note}"
             ]
         }
+
+    def _route_after_detection(self, state: WorkflowState) -> str:
+        """Route to the first analysis node based on query_type."""
+        query_type = state.get("query_type", "stock_analysis")
+        if query_type == "macro_analysis":
+            return "macro_analysis"
+        elif query_type == "industry_analysis":
+            return "industry_analysis"
+        elif query_type == "stock_analysis":
+            return "macro_analysis"
+        return "synthesize_report"
+
+    def _route_after_macro(self, state: WorkflowState) -> str:
+        """Route after macro analysis."""
+        query_type = state.get("query_type", "stock_analysis")
+        if query_type == "macro_analysis":
+            return "synthesize_report"
+        return "industry_analysis"
+
+    def _route_after_industry(self, state: WorkflowState) -> str:
+        """Route after industry analysis."""
+        query_type = state.get("query_type", "stock_analysis")
+        if query_type in ("macro_analysis", "industry_analysis"):
+            return "synthesize_report"
+        return "equity_analysis"
+
+    def _route_after_equity(self, state: WorkflowState) -> str:
+        """Route after equity analysis."""
+        return "synthesize_report"
 
     def _detect_symbol(self, query: str, query_upper: str) -> str:
         """Detect stock symbol from query."""
@@ -241,8 +311,11 @@ class AIResearchWorkflow:
     def _run_macro_analysis(self, state: WorkflowState) -> dict:
         """Run macro economic analysis."""
         country = state.get("country", "us")
+        query_type = state.get("query_type", "stock_analysis")
         trace_id = get_trace_id()
         logger.info(f"[TRACE={trace_id}] Running macro analysis for country: {country}")
+
+        total_steps = {'macro_analysis': 1, 'industry_analysis': 2, 'stock_analysis': 4}.get(query_type, 4)
 
         try:
             macro_context = self.macro_analyst.analyze(country)
@@ -250,7 +323,7 @@ class AIResearchWorkflow:
             return {
                 "macro_context": macro_context,
                 "messages": state.get("messages", []) + [
-                    f"### 📈 步骤 1/4: 宏观经济分析完成\n\n- **国家**: {country}\n- **GDP 增长**: {macro_context.gdp_growth}%\n- **通胀率**: {macro_context.inflation_rate}%\n- **市场情绪**: {macro_context.market_sentiment}"
+                    f"### 📈 步骤 1/{total_steps}: 宏观经济分析完成\n\n- **国家**: {country}\n- **GDP 增长**: {macro_context.gdp_growth}%\n- **通胀率**: {macro_context.inflation_rate}%\n- **市场情绪**: {macro_context.market_sentiment}"
                 ]
             }
         except Exception as e:
@@ -306,28 +379,31 @@ class AIResearchWorkflow:
             }
 
     def _run_report_synthesis(self, state: WorkflowState) -> dict:
-        """Run report synthesis."""
+        """Run report synthesis, handling partial contexts."""
         query = state.get("query", "")
         session_id = state.get("session_id")
         macro_context = state.get("macro_context")
         industry_context = state.get("industry_context")
         company_analysis = state.get("company_analysis")
+        query_type = state.get("query_type", "stock_analysis")
         trace_id = get_trace_id()
 
-        if not all([macro_context, industry_context, company_analysis]):
-            logger.error(f"[TRACE={trace_id}] Missing required analysis results for report synthesis")
+        # At least one analysis must be present
+        if not any([macro_context, industry_context, company_analysis]):
+            logger.error(f"[TRACE={trace_id}] No analysis results available for report synthesis")
             return {
                 "error": "缺少必要的分析结果，无法生成报告",
                 "messages": state.get("messages", []) + ["❌ 缺少分析结果，无法生成报告"]
             }
 
         try:
-            logger.info(f"[TRACE={trace_id}] Synthesizing final report")
-            report = self.report_synthesizer.synthesize(
+            logger.info(f"[TRACE={trace_id}] Synthesizing final report (type={query_type})")
+            report = self.report_synthesizer.synthesize_partial(
                 query=query,
                 macro_context=macro_context,
                 industry_context=industry_context,
-                company_analysis=company_analysis
+                company_analysis=company_analysis,
+                query_type=query_type,
             )
             logger.info(f"[TRACE={trace_id}] Report synthesized successfully, length: {len(report.full_report)} chars, recommendation: {report.recommendation}")
 
@@ -337,15 +413,24 @@ class AIResearchWorkflow:
                     "last_report": report.full_report,
                     "last_recommendation": report.recommendation,
                     "last_target_price": report.target_price,
-                    "macro_context": macro_context.to_dict() if hasattr(macro_context, 'to_dict') else str(macro_context),
-                    "industry_context": industry_context.to_dict() if hasattr(industry_context, 'to_dict') else str(industry_context),
-                    "company_analysis": company_analysis.to_dict() if hasattr(company_analysis, 'to_dict') else str(company_analysis)
+                    "macro_context": macro_context.model_dump() if macro_context else None,
+                    "industry_context": industry_context.model_dump() if industry_context else None,
+                    "company_analysis": company_analysis.model_dump() if company_analysis else None,
                 })
+
+            # Determine total steps based on query_type
+            step_map = {
+                'macro_analysis': 1,
+                'industry_analysis': 2,
+                'stock_analysis': 4,
+            }
+            total_steps = step_map.get(query_type, 4)
+            current_step = total_steps
 
             return {
                 "report": report,
                 "messages": state.get("messages", []) + [
-                    f"### 📄 步骤 4/4: 报告合成完成\n\n- **投资建议**: {report.recommendation}\n- **目标价格**: ${report.target_price}\n- **报告长度**: {len(report.full_report)} 字符"
+                    f"### 📄 步骤 {current_step}/{total_steps}: 报告合成完成\n\n- **投资建议**: {report.recommendation}\n- **目标价格**: ${report.target_price}\n- **报告长度**: {len(report.full_report)} 字符"
                 ]
             }
         except Exception as e:
@@ -420,6 +505,7 @@ class AIResearchWorkflow:
             "country": "",
             "sector": "",
             "symbol": "",
+            "query_type": "stock_analysis",
             "macro_context": None,
             "industry_context": None,
             "company_analysis": None,
