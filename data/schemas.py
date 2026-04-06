@@ -64,9 +64,9 @@ class ResearchReport(BaseModel):
     """Final synthesized research report."""
 
     query: str = Field(description="Original user query")
-    macro_analysis: MacroContext = Field(description="Macroeconomic analysis")
-    industry_analysis: IndustryContext = Field(description="Industry analysis")
-    company_analysis: CompanyAnalysis = Field(description="Company-specific analysis")
+    macro_analysis: Optional[MacroContext] = Field(default=None, description="Macroeconomic analysis")
+    industry_analysis: Optional[IndustryContext] = Field(default=None, description="Industry analysis")
+    company_analysis: Optional[CompanyAnalysis] = Field(default=None, description="Company-specific analysis")
     investment_thesis: str = Field(description="Core investment thesis")
     recommendation: str = Field(description="Investment recommendation: buy/hold/sell")
     target_price: Optional[float] = Field(description="Target price if applicable")
