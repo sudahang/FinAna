@@ -5,11 +5,13 @@ from typing import Optional, List
 from datetime import datetime
 from enum import Enum
 
+from users.config import config
+
 
 class NotificationTime(str, Enum):
     """Notification time preference."""
-    MORNING = "08:00"
-    EVENING = "20:00"
+    MORNING = config.notification_time_morning
+    EVENING = config.notification_time_evening
     BOTH = "both"
 
 

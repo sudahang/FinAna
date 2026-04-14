@@ -460,7 +460,7 @@ class TestEmailService:
         assert "FinAna" in html
         assert "Test User" in html
         assert "TSLA" in html
-        assert "早间" in html
+        assert "Morning" in html
 
     def test_render_html_report_evening(self):
         from users.email_service import EmailService, DailyReport
@@ -543,8 +543,9 @@ class TestSchedulerService:
 
 class TestNotificationTime:
     def test_notification_time_enum(self):
-        assert NotificationTime.MORNING.value == "08:00"
-        assert NotificationTime.EVENING.value == "20:00"
+        from users.config import config
+        assert NotificationTime.MORNING.value == config.notification_time_morning
+        assert NotificationTime.EVENING.value == config.notification_time_evening
         assert NotificationTime.BOTH.value == "both"
 
     def test_notification_time_values(self):

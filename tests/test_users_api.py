@@ -370,8 +370,9 @@ class TestUserSchemas:
         assert update.is_active is False
 
     def test_notification_time_enum(self):
-        assert NotificationTime.MORNING.value == "08:00"
-        assert NotificationTime.EVENING.value == "20:00"
+        from users.config import config
+        assert NotificationTime.MORNING.value == config.notification_time_morning
+        assert NotificationTime.EVENING.value == config.notification_time_evening
         assert NotificationTime.BOTH.value == "both"
 
     def test_market_type_enum(self):

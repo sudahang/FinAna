@@ -10,6 +10,7 @@ from typing import List, Optional
 from datetime import datetime
 from dataclasses import dataclass
 
+from users.config import config
 from users.schemas import UserProfile, NotificationTime
 from users.service import get_user_service
 from workflows.ai_research_workflow import AIResearchWorkflow
@@ -36,7 +37,7 @@ class EmailService:
         self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
         self.smtp_user = os.getenv("SMTP_USER", "")
         self.smtp_password = os.getenv("SMTP_PASSWORD", "")
-        self.from_name = os.getenv("SMTP_FROM_NAME", "FinAna投资助手")
+        self.from_name = os.getenv("SMTP_FROM_NAME", config.app_name)
         self.enabled = bool(self.smtp_user and self.smtp_password)
 
         if not self.enabled:
@@ -138,20 +139,19 @@ class EmailService:
         stocks_html = ""
         if report.stock_summaries:
             stocks_html = """
-            <h2>📈 关注的股票</h2>
+            <h2>Stocks</h2>
             <table style="width:100%; border-collapse:collapse; margin-bottom:20px;">
             <tr style="background:#f5f5f5;">
-                <th style="padding:10px; text-align:left;">股票</th>
-                <th style="padding:10px; text-align:right;">价格</th>
-                <th style="padding:10px; text-align:right;">涨跌幅</th>
-                <th style="padding:10px; text-align:left;">最新资讯</th>
+                <th style="padding:10px; text-align:left;">Stock</th>
+                <th style="padding:10px; text-align:right;">Price</th>
+                <th style="padding:10px; text-align:right;">Change</th>
+                <th style="padding:10px; text-align:left;">Latest News</th>
             </tr>
             """
             for stock in report.stock_summaries:
                 change_color = "green" if stock.get("change", 0) >= 0 else "red"
                 change_str = f"{stock.get('change', 0):.2f}%"
-                news_title = stock["news"][0]["title"] if stock["news"] else "暂无新闻"
-
+                news_title = stock["news"][0]["title"] if stock["news"] else "No news"
                 stocks_html += f"""
                 <tr style="border-bottom:1px solid #eee;">
                     <td style="padding:10px;">
@@ -168,18 +168,20 @@ class EmailService:
         industries_html = ""
         if report.industry_summaries:
             industries_html = """
-            <h2>🏭 关注的行业</h2>
+            <h2>Sectors</h2>
             """
             for ind in report.industry_summaries:
                 outlook_emoji = "📈" if ind.get("outlook") == "positive" else "📉" if ind.get("outlook") == "negative" else "➡️"
                 industries_html += f"""
                 <div style="margin-bottom:15px; padding:10px; background:#f9f9f9; border-radius:5px;">
                     <strong>{ind['industry']}</strong> {outlook_emoji}<br>
-                    <small>{ind.get('summary', '暂无分析')[:150]}...</small>
+                    <small>{ind.get('summary', 'No analysis')[:150]}...</small>
                 </div>
                 """
 
-        time_label = "早间" if datetime.now().hour < 12 else "晚间"
+        now_hour = datetime.now().hour
+        morning_hour = int(config.notification_time_morning.split(":")[0])
+        time_label = "Morning" if now_hour < morning_hour else "Evening"
 
         html = f"""
         <!DOCTYPE html>
@@ -196,19 +198,19 @@ class EmailService:
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>📊 FinAna {time_label}投资简报</h1>
-                    <p>{report.generated_at.strftime('%Y年%m月%d日 %H:%M')}</p>
+                    <h1>📊 {config.app_name} {time_label} Report</h1>
+                    <p>{report.generated_at.strftime('%Y-%m-%d %H:%M')}</p>
                 </div>
 
-                <p>您好{ f'，{user.name}' if user.name else '' }！以下是今日为您整理的投资资讯：</p>
+                <p>Hello{ f' {user.name}' if user.name else '' }, here is your daily update:</p>
 
                 {stocks_html}
 
                 {industries_html}
 
                 <div class="footer">
-                    <p>此邮件由 FinAna 自动发送，如需调整关注设置，请登录 FinAna 账户修改。</p>
-                    <p>© 2026 FinAna 智能投资研究助手</p>
+                    <p>This email was sent by {config.app_name}. To update preferences, log in to your account.</p>
+                    <p>© 2026 {config.app_name}</p>
                 </div>
             </div>
         </body>
@@ -226,7 +228,7 @@ class EmailService:
         report = self.generate_daily_report(user)
 
         html_content = self.render_html_report(report)
-        subject = f"📊 FinAna {datetime.now().strftime('%m月%d日')}投资简报"
+        subject = f"📊 {config.app_name} Daily Report {datetime.now().strftime('%Y-%m-%d')}"
 
         return self.send_email(
             to_email=user.email,

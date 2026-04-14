@@ -8,6 +8,7 @@ from typing import Optional
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from users.config import config
 from users.schemas import NotificationTime
 from users.email_service import get_email_service
 
@@ -21,6 +22,8 @@ class SchedulerService:
         """Initialize scheduler service."""
         self.scheduler = BackgroundScheduler()
         self.running = False
+        self.morning_hour = int(config.notification_time_morning.split(":")[0])
+        self.evening_hour = int(config.notification_time_evening.split(":")[0])
 
     def start(self):
         """Start the scheduler."""
@@ -32,24 +35,24 @@ class SchedulerService:
 
         self.scheduler.add_job(
             self._send_morning_reports,
-            CronTrigger(hour=8, minute=0),
+            CronTrigger(hour=self.morning_hour, minute=0),
             id="morning_reports",
-            name="Morning Reports (8:00)",
+            name=f"Morning Reports ({config.notification_time_morning})",
             replace_existing=True
         )
 
         self.scheduler.add_job(
             self._send_evening_reports,
-            CronTrigger(hour=20, minute=0),
+            CronTrigger(hour=self.evening_hour, minute=0),
             id="evening_reports",
-            name="Evening Reports (20:00)",
+            name=f"Evening Reports ({config.notification_time_evening})",
             replace_existing=True
         )
 
         self.scheduler.start()
         self.running = True
 
-        logger.info("Scheduler started successfully with jobs: morning (8:00), evening (20:00)")
+        logger.info(f"Scheduler started successfully with jobs: morning ({config.notification_time_morning}), evening ({config.notification_time_evening})")
 
     def stop(self):
         """Stop the scheduler."""
