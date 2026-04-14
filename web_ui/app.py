@@ -6,15 +6,19 @@ from memory.conversation_memory import get_conversation_memory
 from dotenv import load_dotenv
 import os
 import uuid
+import logging
 
-# Setup logging
-from logging_config import setup_logging, get_logger
+from config import get_webui_config
+
+webui_config = get_webui_config()
+
+setup_logging = __import__('logging_config', fromlist=['setup_logging', 'get_logger']).setup_logging
+get_logger = __import__('logging_config', fromlist=['setup_logging', 'get_logger']).get_logger
 
 setup_logging(level=logging.INFO)
 logger = get_logger(__name__)
 logger.info("FinAna Web UI starting...")
 
-# Load environment variables
 load_dotenv()
 
 # Get conversation memory singleton
@@ -682,10 +686,10 @@ def create_demo() -> gr.Blocks:
 def launch():
     """Launch the Gradio application."""
     demo = create_demo()
-    demo.queue(max_size=10)
+    demo.queue(max_size=webui_config.queue_max_size)
     demo.launch(
-        server_name="0.0.0.0",
-        server_port=7860,
+        server_name=webui_config.server_name,
+        server_port=webui_config.server_port,
         show_error=True
     )
 

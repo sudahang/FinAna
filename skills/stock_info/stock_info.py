@@ -22,30 +22,28 @@ from datetime import datetime
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from config import get_data_source_config, get_finance_config, get_company_mapping_config
+
 logger = logging.getLogger(__name__)
 
 
 class StockInfoFetcher:
     """上市公司信息查询工具"""
 
-    # 数据源配置
-    SINA_QUOTE_URL = "http://hq.sinajs.cn/list={symbol}"
-    TENCENT_QUOTE_URL = "https://qt.gtimg.cn/q={symbol}"
-    EASTMONEY_STOCK_SEARCH_URL = "https://searchapi.eastmoney.com/api/suggest/get"
-    EASTMONEY_STOCK_DETAIL_URL = "https://push2.eastmoney.com/api/qt/stock/get"
-    EASTMONEY_STOCK_HISTORY_URL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
-
-    # 市场代码映射
-    MARKET_CODES = {
-        "sh": "1",      # 上交所
-        "sz": "0",      # 深交所
-        "hk": "116",    # 港股
-        "us": "162",    # 美股
-        "bj": "2"       # 北交所
-    }
-
     def __init__(self):
         """初始化 HTTP 会话"""
+        config = get_data_source_config()
+        finance_config = get_finance_config()
+
+        self.sina_quote_url = config.sina_quote_url
+        self.tencent_quote_url = config.tencent_quote_url
+        self.eastmoney_stock_search_url = config.eastmoney_stock_search_url
+        self.eastmoney_stock_detail_url = config.eastmoney_stock_detail_url
+        self.eastmoney_stock_history_url = config.eastmoney_stock_history_url
+        self.eastmoney_news_api = config.eastmoney_news_api
+        self.market_codes = config.market_codes
+        self.currency_symbols = finance_config.currency_symbols
+
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -87,7 +85,7 @@ class StockInfoFetcher:
             }
 
             response = self.session.get(
-                self.EASTMONEY_STOCK_SEARCH_URL,
+                self.eastmoney_stock_search_url,
                 params=params,
                 timeout=10,
                 headers={"Referer": "https://www.eastmoney.com/"}
@@ -198,12 +196,12 @@ class StockInfoFetcher:
 
         return None
 
-    def _normalize_symbol(self, symbol: str) -> Optional[str]:
+    def _normalize_symbol(self, symbol: str) -> str:
         """标准化股票代码格式"""
         symbol = symbol.strip().upper()
 
         if not symbol:
-            return None
+            return ""
 
         # 已经是标准格式
         if symbol.startswith(("sh", "sz", "hk")):
@@ -245,11 +243,8 @@ class StockInfoFetcher:
                 tencent_symbol = symbol
 
             response = self.session.get(
-                self.TENCENT_QUOTE_URL.format(symbol=tencent_symbol),
-                timeout=10,
-                headers={
-                    "Referer": "https://stockapp.finance.qq.com/"
-                }
+                self.tencent_quote_url.format(symbol=tencent_symbol),
+                timeout=10
             )
 
             if response.status_code == 200:
@@ -305,7 +300,7 @@ class StockInfoFetcher:
             })
 
             response = sina_session.get(
-                self.SINA_QUOTE_URL.format(symbol=sina_symbol),
+                self.sina_quote_url.format(symbol=sina_symbol),
                 timeout=10
             )
 
@@ -335,7 +330,7 @@ class StockInfoFetcher:
                             amount = float(fields[12]) if len(fields) > 12 and fields[12] else 0
                         else:
                             # A 股：字段 0=名称，1=开盘，2=昨收，3=当前价...
-                            name = name_raw
+                            name = fields[0]
                             current_price = float(fields[3]) if fields[3] else 0
                             prev_close = float(fields[2]) if fields[2] else 0
                             open_price = float(fields[1]) if fields[1] else 0
@@ -391,7 +386,7 @@ class StockInfoFetcher:
             }
 
             response = self.session.get(
-                self.EASTMONEY_STOCK_DETAIL_URL,
+                self.eastmoney_stock_detail_url,
                 params=params,
                 timeout=10
             )
@@ -447,7 +442,7 @@ class StockInfoFetcher:
             }
 
             response = self.session.get(
-                self.EASTMONEY_STOCK_DETAIL_URL,
+                self.eastmoney_stock_detail_url,
                 params=params,
                 timeout=10
             )
@@ -480,11 +475,11 @@ class StockInfoFetcher:
 
         return None
 
-    def _to_eastmoney_secid(self, symbol: str) -> Optional[str]:
+    def _to_eastmoney_secid(self, symbol: str) -> str:
         """转换为东方财富 secid 格式"""
         symbol = self._normalize_symbol(symbol)
         if not symbol:
-            return None
+            return ""
 
         if symbol.startswith("sh"):
             return f"1.{symbol[2:]}"
@@ -493,12 +488,11 @@ class StockInfoFetcher:
         elif symbol.startswith("bj"):
             return f"2.{symbol[2:]}"
         elif symbol.startswith("HK"):
-            # 港股代码处理：HK00700 -> 116.700
             hk_code = symbol[2:].lstrip('0') or '0'
             return f"116.{hk_code}"
         elif symbol.isalpha():
             return f"162.{symbol}"
-        return None
+        return ""
 
     def get_history(self, symbol: str, start_date: str = "",
                     end_date: str = "", period: str = "d") -> Optional[list[dict]]:
@@ -530,7 +524,7 @@ class StockInfoFetcher:
             }
 
             response = self.session.get(
-                self.EASTMONEY_STOCK_HISTORY_URL,
+                self.eastmoney_stock_history_url,
                 params=params,
                 timeout=10
             )
@@ -657,32 +651,10 @@ def get_macro_data(country: str = "china") -> dict:
     Returns:
         宏观经济数据字典
     """
-    # 默认宏观数据
-    macro_defaults = {
-        "china": {
-            "country": "china",
-            "gdp_growth": 5.2,
-            "inflation_rate": 0.2,
-            "interest_rate": 3.45,
-            "unemployment_rate": 5.1,
-            "manufacturing_pmi": 50.2,
-            "consumer_confidence": 120.5,
-            "timestamp": datetime.now()
-        },
-        "us": {
-            "country": "us",
-            "gdp_growth": 2.5,
-            "inflation_rate": 3.2,
-            "interest_rate": 5.25,
-            "unemployment_rate": 3.8,
-            "manufacturing_pmi": 48.5,
-            "consumer_confidence": 110.0,
-            "timestamp": datetime.now()
-        }
-    }
-
+    finance_config = get_finance_config()
     country_lower = country.lower()
-    if country_lower == "china":
-        return macro_defaults["china"]
-    else:
-        return macro_defaults["us"]
+
+    result = finance_config.china_macro_defaults.copy() if country_lower == "china" else finance_config.us_macro_defaults.copy()
+    result["country"] = country_lower
+    result["timestamp"] = datetime.now()
+    return result

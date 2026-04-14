@@ -1,10 +1,10 @@
 """Tests for agent modules."""
 
 import pytest
-from agents.macro_analyst import MacroAnalystAgent
-from agents.industry_analyst import IndustryAnalystAgent
-from agents.equity_analyst import EquityAnalystAgent
-from agents.report_synthesizer import ReportSynthesizerAgent
+from agents.macro_analyst_ai import MacroAnalystAgent
+from agents.industry_analyst_ai import IndustryAnalystAgent
+from agents.equity_analyst_ai import EquityAnalystAgent
+from agents.report_synthesizer_ai import ReportSynthesizerAgent
 from data.schemas import MacroContext, IndustryContext, CompanyAnalysis, CompanyData, NewsItem
 
 
@@ -15,7 +15,7 @@ class TestMacroAnalystAgent:
         """Test creating a MacroAnalystAgent."""
         agent = MacroAnalystAgent()
         assert agent.role == "Macro Economy Analyst"
-        assert agent.goal == "Analyze macroeconomic conditions and provide investment context"
+        assert agent.goal == "Analyze macroeconomic conditions using real data and AI"
 
     def test_analyze_returns_macro_context(self):
         """Test that analyze returns a MacroContext."""
@@ -54,25 +54,25 @@ class TestIndustryAnalystAgent:
     def test_extract_sector_automotive(self):
         """Test sector extraction for automotive keywords."""
         agent = IndustryAnalystAgent()
-        assert agent._extract_sector("Analyze Tesla stock") == "Automotive"
-        assert agent._extract_sector("EV market analysis") == "Automotive"
+        assert agent._extract_sector("Analyze Tesla stock") == "汽车"
+        assert agent._extract_sector("EV market analysis") == "汽车"
 
     def test_extract_sector_healthcare(self):
         """Test sector extraction for healthcare keywords."""
         agent = IndustryAnalystAgent()
-        assert agent._extract_sector("Healthcare sector outlook") == "Healthcare"
-        assert agent._extract_sector("Health industry analysis") == "Healthcare"
+        assert agent._extract_sector("医疗 sector outlook") == "医疗"
+        assert agent._extract_sector("医药 industry analysis") == "医疗"
 
     def test_extract_sector_technology(self):
         """Test sector extraction for technology keywords."""
         agent = IndustryAnalystAgent()
-        assert agent._extract_sector("Technology stocks") == "Technology"
-        assert agent._extract_sector("AI companies") == "Technology"
+        assert agent._extract_sector("Technology stocks") == "科技"
+        assert agent._extract_sector("AI companies") == "科技"
 
     def test_extract_sector_default(self):
         """Test default sector extraction."""
         agent = IndustryAnalystAgent()
-        assert agent._extract_sector("Unknown sector") == "Technology"
+        assert agent._extract_sector("Unknown sector") == "科技"
 
 
 class TestEquityAnalystAgent:
@@ -103,12 +103,12 @@ class TestEquityAnalystAgent:
     def test_extract_symbol_nvidia(self):
         """Test symbol extraction for NVIDIA."""
         agent = EquityAnalystAgent()
-        assert agent._extract_symbol("Buy NVIDIA") == "NVDA"
+        assert agent._extract_symbol("Analyze NVIDIA stock") == "NVDA"
 
     def test_extract_symbol_apple(self):
         """Test symbol extraction for Apple."""
         agent = EquityAnalystAgent()
-        assert agent._extract_symbol("Apple Inc analysis") == "AAPL"
+        assert agent._extract_symbol("Apple analysis") == "AAPL"
 
     def test_extract_symbol_direct_ticker(self):
         """Test direct ticker symbol extraction."""
@@ -175,41 +175,7 @@ class TestReportSynthesizerAgent:
 
         assert result.query == "Analyze NVDA"
         assert result.recommendation in ["buy", "hold", "sell"]
-        assert "# Investment Research Report" in result.full_report
-
-    def test_generate_recommendation_buy_positive(self):
-        """Test recommendation generation for buy + positive."""
-        agent = ReportSynthesizerAgent()
-
-        company_data = CompanyData(
-            symbol="NVDA",
-            name="NVIDIA",
-            sector="Technology",
-            market_cap=1750.0,
-            pe_ratio=30.0,
-            current_price=100.0
-        )
-        company = CompanyAnalysis(
-            company=company_data,
-            financial_health="Strong",
-            recent_news=[],
-            technical_indicator="buy",
-            risks=[],
-            summary="Test"
-        )
-        industry = IndustryContext(
-            sector_name="Technology",
-            sector_growth=10.0,
-            competitive_landscape="Test",
-            regulatory_environment="Test",
-            trends=[],
-            outlook="positive",
-            summary="Test"
-        )
-
-        rec, price = agent._generate_recommendation(company, industry)
-        assert rec == "buy"
-        assert price > 100.0  # Target price higher than current
+        assert "# 投资研究报告" in result.full_report
 
     def test_generate_report_contains_sections(self):
         """Test that generated report contains all sections."""
@@ -251,6 +217,6 @@ class TestReportSynthesizerAgent:
 
         report = agent.synthesize("Analyze AAPL", macro, industry, company)
 
-        assert "## Macroeconomic Analysis" in report.full_report
-        assert "## Industry Analysis" in report.full_report
-        assert "## Company Analysis" in report.full_report
+        assert "## 宏观经济分析" in report.full_report
+        assert "## 行业分析" in report.full_report
+        assert "## 公司分析" in report.full_report

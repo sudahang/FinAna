@@ -126,7 +126,7 @@ class TestAnalysisEndpoints:
         data = result_response.json()
         assert data["query"] == "Should I buy Tesla?"
         assert data["recommendation"] in ["buy", "hold", "sell"]
-        assert "# Investment Research Report" in data["full_report"]
+        assert "# 投资研究报告" in data["full_report"]
 
     def test_multiple_sequential_analyses(self):
         """Test multiple sequential analysis requests."""

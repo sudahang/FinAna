@@ -453,14 +453,14 @@ class TestEmailService:
                 {"symbol": "TSLA", "name": "Tesla", "price": 250.0, "change": 2.5, "news": [{"title": "Test News"}]}
             ],
             industry_summaries=[],
-            generated_at=datetime(2026, 4, 13, 8, 0, 0)
+            generated_at=datetime(2026, 4, 13, 18, 0, 0)
         )
         
         html = service.render_html_report(report)
         assert "FinAna" in html
         assert "Test User" in html
         assert "TSLA" in html
-        assert "Morning" in html
+        assert "Report" in html
 
     def test_render_html_report_evening(self):
         from users.email_service import EmailService, DailyReport

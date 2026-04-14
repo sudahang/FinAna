@@ -3,6 +3,7 @@
 from llm.client import LLMClient, get_llm_client
 from data.finance_data import FinancialDataFetcher, get_data_fetcher
 from data.schemas import IndustryContext
+from config import get_company_mapping_config
 import json
 
 
@@ -196,20 +197,12 @@ class IndustryAnalystAgent:
         Uses keyword matching and AI if needed.
         """
         query_lower = query.lower()
-
-        sector_keywords = {
-            "科技": ["科技", "软件", "ai", "半导体", "芯片", "互联网", "nvidia", "苹果", "微软"],
-            "汽车": ["汽车", "新能源", "ev", "tesla", "特斯拉", "比亚迪", "造车"],
-            "医疗": ["医疗", "健康", "医药", "biotech", "生物科技", "器械"],
-            "金融": ["金融", "银行", "保险", "券商", " fintech"],
-            "消费": ["消费", "零售", "食品", "饮料", "家电", "服装"],
-            "能源": ["能源", "石油", "天然气", "光伏", "风电", "电池"]
-        }
+        mapping_config = get_company_mapping_config()
+        sector_keywords = mapping_config.sector_keywords
 
         for sector, keywords in sector_keywords.items():
             for keyword in keywords:
                 if keyword in query_lower:
                     return sector
 
-        # Default to technology
-        return "科技"
+        return mapping_config.default_sector

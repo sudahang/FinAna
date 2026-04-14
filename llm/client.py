@@ -8,10 +8,9 @@ from dotenv import load_dotenv, find_dotenv
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# Load environment variables from .env file (search parent dirs)
-dotenv_path = find_dotenv(usecwd=True)
-if dotenv_path:
-    load_dotenv(dotenv_path)
+from config import get_llm_config
+
+load_dotenv(find_dotenv(usecwd=True))
 
 
 class DashScopeConfig(BaseModel):
@@ -22,7 +21,7 @@ class DashScopeConfig(BaseModel):
     model: str = "qwen3.5-plus"
     max_tokens: int = 2048
     temperature: float = 0.7
-    timeout: int = 90  # 90 seconds for complex analysis tasks
+    timeout: int = 90
 
 
 class LLMClient:
@@ -41,12 +40,9 @@ class LLMClient:
             config: DashScope configuration. If None, reads from environment.
         """
         if config is None:
-            # Try to ensure .env is loaded relative to the project
-            dotenv_path = find_dotenv(usecwd=True)
-            if dotenv_path:
-                load_dotenv(dotenv_path, override=False)
+            llm_config = get_llm_config()
+            api_key = llm_config.api_key
 
-            api_key = os.getenv("DASHSCOPE_API_KEY")
             if not api_key:
                 raise ValueError(
                     "DASHSCOPE_API_KEY not found. Please set the environment variable "
@@ -54,28 +50,16 @@ class LLMClient:
                     "in the project root with DASHSCOPE_API_KEY=sk-... and restart."
                 )
 
-            # Allow overriding other config via environment variables
-            default_model = "qwen3.5-plus"
-            default_max_tokens = 2048 * 4
-            default_temperature = 0.7
-            default_timeout = 90
-
-            model = os.getenv("DASHSCOPE_MODEL") or default_model
-            max_tokens = int(os.getenv("DASHSCOPE_MAX_TOKENS") or default_max_tokens)
-            temperature = float(os.getenv("DASHSCOPE_TEMPERATURE") or default_temperature)
-            timeout = int(os.getenv("DASHSCOPE_TIMEOUT") or default_timeout)
-
             config = DashScopeConfig(
                 api_key=api_key,
-                model=model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                timeout=timeout,
+                model=llm_config.model,
+                max_tokens=llm_config.max_tokens,
+                temperature=llm_config.temperature,
+                timeout=llm_config.timeout,
             )
 
         self.config = config
         self.session = requests.Session()
-        # Configure retries for transient network errors/timeouts
         retries = Retry(
             total=3,
             backoff_factor=1,

@@ -10,6 +10,7 @@ from skills.stock_info.stock_info import (
     get_stock_history,
     search_stock_info
 )
+from config import get_company_mapping_config, get_finance_config
 from datetime import datetime
 import json
 
@@ -421,6 +422,8 @@ class EquityAnalystAgent:
         Supports A 股 (6-digit codes), HK stocks, and US stocks.
         """
         query_upper = query.upper()
+        mapping_config = get_company_mapping_config()
+        finance_config = get_finance_config()
 
         # Check for A 股 6-digit codes directly
         import re
@@ -447,74 +450,14 @@ class EquityAnalystAgent:
             return us_tickers[0]
 
         # Common US stock mappings (including Chinese names)
-        company_mapping = {
-            "特斯拉": "TSLA",
-            "TSLA": "TSLA",
-            "英伟达": "NVDA",
-            "NVIDIA": "NVDA",
-            "NVDA": "NVDA",
-            "苹果": "AAPL",
-            "APPLE": "AAPL",
-            "AAPL": "AAPL",
-            "微软": "MSFT",
-            "MICROSOFT": "MSFT",
-            "MSFT": "MSFT",
-            "谷歌": "GOOGL",
-            "GOOGLE": "GOOGL",
-            "GOOGL": "GOOGL",
-            "亚马逊": "AMZN",
-            "AMAZON": "AMZN",
-            "AMZN": "AMZN",
-            "META": "META",
-            "FACEBOOK": "META",
-            # Chinese concept stocks
-            "阿里巴巴": "BABA",
-            "ALIBABA": "BABA",
-            "BABA": "BABA",
-            "阿里": "BABA",
-            "拼多多": "PDD",
-            "PDD": "PDD",
-            "京东": "JD",
-            "JD": "JD",
-            "百度": "BIDU",
-            "BAIDU": "BIDU",
-            "BIDU": "BIDU",
-            "网易": "NTES",
-            "NETEASE": "NTES",
-            "NTES": "NTES",
-            "小鹏": "XPEV",
-            "XPENG": "XPEV",
-            "XPEV": "XPEV",
-            "理想": "LI",
-            "LI AUTO": "LI",
-            "蔚来": "NIO",
-            "NIO": "NIO",
-            # A 股 popular stocks
-            "贵州茅台": "sh600519",
-            "茅台": "sh600519",
-            "600519": "sh600519",
-            "宁德时代": "sz300750",
-            "宁德": "sz300750",
-            "300750": "sz300750",
-            "中国平安": "sh601318",
-            "平安": "sh601318",
-            "601318": "sh601318",
-            "招商银行": "sh600036",
-            "招行": "sh600036",
-            "600036": "sh600036",
-            "腾讯": "HK00700",
-            "腾讯控股": "HK00700",
-            "00700": "HK00700",
-            "阿里巴巴港股": "HK09988",
-            "9988": "HK09988"
-        }
+        company_mapping = mapping_config.mappings
 
         for name, symbol in company_mapping.items():
             if name in query_upper or name in query:
                 return symbol
 
-        # Default to Tesla
-        return "TSLA"
+        # Default to configured default
+        return finance_config.default_stock
 
     def analyze_with_context(
         self,

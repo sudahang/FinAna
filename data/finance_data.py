@@ -10,6 +10,8 @@ from datetime import datetime
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from config import get_data_source_config, get_finance_config
+
 
 class FinancialDataFetcher:
     """
@@ -21,19 +23,21 @@ class FinancialDataFetcher:
     - Jin10 (金十数据): Macro economic data
     """
 
-    # Sina Finance API endpoints
-    SINA_QUOTE_URL = "http://hq.sinajs.cn/list={symbol}"
-    SINA_NEWS_URL = "https://feed.mix.sina.com.cn/api/roll/get"
-
-    # Eastmoney API endpoints
-    EASTMONEY_STOCK_INFO_URL = "https://push2.eastmoney.com/api/qt/stock/get"
-    EASTMONEY_NEWS_URL = "https://api.eastmoney.com/News/getList"
-
-    # Macro data sources
-    MACRO_DATA_URL = "https://datainterface.eastmoney.com/Data_Data/OtherData"
-
     def __init__(self):
         """Initialize the data fetcher."""
+        config = get_data_source_config()
+        finance_config = get_finance_config()
+
+        self.sina_quote_url = config.sina_quote_url
+        self.sina_news_url = config.sina_news_url
+        self.eastmoney_stock_info_url = config.eastmoney_stock_info_url
+        self.eastmoney_news_url = config.eastmoney_news_url
+        self.macro_data_url = config.eastmoney_macro_url
+        self.eastmoney_industry_url = config.eastmoney_industry_url
+        self.china_macro_defaults = finance_config.china_macro_defaults
+        self.us_macro_defaults = finance_config.us_macro_defaults
+        self.industry_defaults = finance_config.industry_defaults
+
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -65,7 +69,7 @@ class FinancialDataFetcher:
         """
         try:
             response = self.session.get(
-                self.SINA_QUOTE_URL.format(symbol=symbol),
+                self.sina_quote_url.format(symbol=symbol),
                 timeout=10
             )
             response.raise_for_status()
@@ -191,7 +195,7 @@ class FinancialDataFetcher:
             }
 
             response = self.session.get(
-                self.SINA_NEWS_URL,
+                self.sina_news_url,
                 params=params,
                 timeout=10
             )
@@ -200,6 +204,7 @@ class FinancialDataFetcher:
                 text = response.text.strip()
                 # Attempt to extract JSON from callback(...) wrapper or raw JSON
                 data = None
+                inner = text
                 try:
                     if text.startswith("callback(") and text.endswith(")"):
                         inner = text[text.find("(") + 1: -1]
@@ -255,7 +260,7 @@ class FinancialDataFetcher:
             }
 
             response = self.session.get(
-                self.EASTMONEY_NEWS_URL,
+                self.eastmoney_news_url,
                 params=params,
                 timeout=10
             )
@@ -306,7 +311,7 @@ class FinancialDataFetcher:
             }
 
             response = self.session.get(
-                self.EASTMONEY_STOCK_INFO_URL,
+                self.eastmoney_stock_info_url,
                 params=params,
                 timeout=10
             )
@@ -361,35 +366,27 @@ class FinancialDataFetcher:
                     timeout=10
                 )
 
-                # Default values if API fails
-                macro_data.update({
-                    "gdp_growth": 5.2,
-                    "inflation_rate": 0.2,
-                    "interest_rate": 3.45,
-                    "unemployment_rate": 5.1,
-                    "manufacturing_pmi": 50.2,
-                    "consumer_confidence": 120.5
-                })
+                macro_data.update(self.china_macro_defaults)
 
             else:  # US
+                macro_data.update(self.us_macro_defaults)
+
+        except Exception as e:
+            print(f"Error fetching macro data: {e}")
+            if country.lower() == "china":
+                macro_data.update({
+                    "gdp_growth": 5.0,
+                    "inflation_rate": 0.2,
+                    "interest_rate": 3.45,
+                    "unemployment_rate": 5.1
+                })
+            else:
                 macro_data.update({
                     "gdp_growth": 2.5,
                     "inflation_rate": 3.2,
                     "interest_rate": 5.25,
-                    "unemployment_rate": 3.8,
-                    "manufacturing_pmi": 48.5,
-                    "consumer_confidence": 110.0
+                    "unemployment_rate": 3.8
                 })
-
-        except Exception as e:
-            print(f"Error fetching macro data: {e}")
-            # Return default values
-            macro_data.update({
-                "gdp_growth": 5.0 if country.lower() == "china" else 2.5,
-                "inflation_rate": 0.2 if country.lower() == "china" else 3.2,
-                "interest_rate": 3.45 if country.lower() == "china" else 5.25,
-                "unemployment_rate": 5.1 if country.lower() == "china" else 3.8
-            })
 
         return macro_data
 
@@ -415,38 +412,12 @@ class FinancialDataFetcher:
             }
 
             response = self.session.get(
-                "http://push2.eastmoney.com/api/qt/clist/get",
+                self.eastmoney_industry_url,
                 params=params,
                 timeout=10
             )
 
-            # Default industry data
-            industry_defaults = {
-                "technology": {
-                    "sector_growth": 12.5,
-                    "avg_pe_ratio": 35.2,
-                    "market_sentiment": "positive",
-                    "policy_support": "strong"
-                },
-                "automotive": {
-                    "sector_growth": 8.3,
-                    "avg_pe_ratio": 22.1,
-                    "market_sentiment": "neutral",
-                    "policy_support": "moderate"
-                },
-                "healthcare": {
-                    "sector_growth": 10.2,
-                    "avg_pe_ratio": 28.5,
-                    "market_sentiment": "positive",
-                    "policy_support": "strong"
-                },
-                "finance": {
-                    "sector_growth": 5.8,
-                    "avg_pe_ratio": 8.5,
-                    "market_sentiment": "neutral",
-                    "policy_support": "moderate"
-                }
-            }
+            industry_defaults = self.industry_defaults
 
             sector_lower = sector.lower()
             for key, value in industry_defaults.items():
