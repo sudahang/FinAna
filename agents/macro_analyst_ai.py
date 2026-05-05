@@ -4,7 +4,7 @@ from llm.client import LLMClient, get_llm_client
 from data.finance_data import FinancialDataFetcher, get_data_fetcher
 from data.schemas import MacroContext
 from skills.stock_info.stock_info import get_macro_data
-import json
+from agents.structured_output import extract_json_object, normalize_choice, repair_json_response
 
 
 class MacroAnalystAgent:
@@ -64,6 +64,11 @@ class MacroAnalystAgent:
                 messages=[{"role": "user", "content": user_prompt}],
                 system_prompt=self.SYSTEM_PROMPT
             )
+            response = repair_json_response(
+                self.llm,
+                response,
+                '{"summary": "string", "market_sentiment": "bullish|neutral|bearish", "recommendation": "string"}',
+            )
 
             # Parse AI response to extract structured data
             return self._parse_ai_response(response, macro_data)
@@ -85,6 +90,9 @@ class MacroAnalystAgent:
 - 失业率：{macro_data.get('unemployment_rate', 'N/A')}%
 - 制造业 PMI: {macro_data.get('manufacturing_pmi', 'N/A')}
 - 消费者信心：{macro_data.get('consumer_confidence', 'N/A')}
+- 数据来源：{macro_data.get('data_source', '未标注')}
+- 数据时间：{macro_data.get('as_of') or macro_data.get('timestamp') or '未标注'}
+- 是否 fallback/默认数据：{macro_data.get('is_fallback', False)}
 
 请提供：
 1. 一段简洁的宏观经济总结（100-200 字）
@@ -101,25 +109,24 @@ class MacroAnalystAgent:
     def _parse_ai_response(self, response: str, macro_data: dict) -> MacroContext:
         """Parse AI response into structured MacroContext."""
         try:
-            # Try to extract JSON from response
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
-            if start_idx >= 0 and end_idx > start_idx:
-                json_str = response[start_idx:end_idx]
-                parsed = json.loads(json_str)
-            else:
-                parsed = {}
-
+            parsed = extract_json_object(response)
             return MacroContext(
                 gdp_growth=macro_data.get('gdp_growth', 5.0),
                 inflation_rate=macro_data.get('inflation_rate', 2.0),
                 interest_rate=macro_data.get('interest_rate', 3.5),
                 unemployment_rate=macro_data.get('unemployment_rate', 5.0),
-                market_sentiment=parsed.get('market_sentiment', 'neutral'),
-                summary=parsed.get('summary', self._generate_fallback_summary(macro_data))
+                market_sentiment=normalize_choice(
+                    parsed.get('market_sentiment'),
+                    {"bullish", "neutral", "bearish"},
+                    "neutral",
+                ),
+                summary=parsed.get('summary') or self._generate_fallback_summary(macro_data),
+                as_of=macro_data.get('as_of') or macro_data.get('timestamp'),
+                data_source=macro_data.get('data_source', 'unknown'),
+                is_fallback=macro_data.get('is_fallback', False),
             )
 
-        except json.JSONDecodeError:
+        except Exception:
             return self._fallback_analysis(macro_data)
 
     def _fallback_analysis(self, macro_data: dict) -> MacroContext:
@@ -141,7 +148,10 @@ class MacroAnalystAgent:
             interest_rate=macro_data.get('interest_rate', 3.5),
             unemployment_rate=macro_data.get('unemployment_rate', 5.0),
             market_sentiment=sentiment,
-            summary=self._generate_fallback_summary(macro_data)
+            summary=self._generate_fallback_summary(macro_data),
+            as_of=macro_data.get('as_of') or macro_data.get('timestamp'),
+            data_source=macro_data.get('data_source', 'fallback macro analysis'),
+            is_fallback=True,
         )
 
     def _generate_fallback_summary(self, macro_data: dict) -> str:

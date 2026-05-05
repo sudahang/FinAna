@@ -667,7 +667,10 @@ def get_macro_data(country: str = "china") -> dict:
             "unemployment_rate": 5.1,
             "manufacturing_pmi": 50.2,
             "consumer_confidence": 120.5,
-            "timestamp": datetime.now()
+            "timestamp": datetime.now(),
+            "as_of": datetime.now(),
+            "data_source": "stock_info default macro data",
+            "is_fallback": True,
         },
         "us": {
             "country": "us",
@@ -677,7 +680,10 @@ def get_macro_data(country: str = "china") -> dict:
             "unemployment_rate": 3.8,
             "manufacturing_pmi": 48.5,
             "consumer_confidence": 110.0,
-            "timestamp": datetime.now()
+            "timestamp": datetime.now(),
+            "as_of": datetime.now(),
+            "data_source": "stock_info default macro data",
+            "is_fallback": True,
         }
     }
 

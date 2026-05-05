@@ -3,7 +3,7 @@
 from llm.client import LLMClient, get_llm_client
 from data.finance_data import FinancialDataFetcher, get_data_fetcher
 from data.schemas import IndustryContext
-import json
+from agents.structured_output import extract_json_object, normalize_choice, normalize_string_list, repair_json_response
 
 
 class IndustryAnalystAgent:
@@ -58,6 +58,11 @@ class IndustryAnalystAgent:
                 messages=[{"role": "user", "content": user_prompt}],
                 system_prompt=self.SYSTEM_PROMPT
             )
+            response = repair_json_response(
+                self.llm,
+                response,
+                '{"summary": "string", "outlook": "positive|neutral|negative", "trends": ["string"], "competitive_landscape": "string", "regulatory_environment": "string"}',
+            )
 
             # Parse AI response to extract structured data
             return self._parse_ai_response(response, sector, industry_data)
@@ -75,6 +80,9 @@ class IndustryAnalystAgent:
 - 平均市盈率：{industry_data.get('avg_pe_ratio', 'N/A')}x
 - 市场情绪：{industry_data.get('market_sentiment', 'N/A')}
 - 政策支持：{industry_data.get('policy_support', 'N/A')}
+- 数据来源：{industry_data.get('data_source', '未标注')}
+- 数据时间：{industry_data.get('as_of', '未标注')}
+- 是否 fallback/默认数据：{industry_data.get('is_fallback', False)}
 
 请提供：
 1. 一段行业分析总结（200-500 字）
@@ -100,15 +108,7 @@ class IndustryAnalystAgent:
     ) -> IndustryContext:
         """Parse AI response into structured IndustryContext."""
         try:
-            # Try to extract JSON from response
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
-            if start_idx >= 0 and end_idx > start_idx:
-                json_str = response[start_idx:end_idx]
-                parsed = json.loads(json_str)
-            else:
-                parsed = {}
-
+            parsed = extract_json_object(response)
             return IndustryContext(
                 sector_name=sector,
                 sector_growth=industry_data.get('sector_growth', 8.0),
@@ -120,12 +120,19 @@ class IndustryAnalystAgent:
                     'regulatory_environment',
                     f"当前{sector}行业监管环境总体稳定。"
                 ),
-                trends=parsed.get('trends', ["行业数字化转型加速"]),
-                outlook=parsed.get('outlook', 'neutral'),
-                summary=parsed.get('summary', self._generate_fallback_summary(sector, industry_data))
+                trends=normalize_string_list(parsed.get('trends'), ["行业数字化转型加速"]),
+                outlook=normalize_choice(
+                    parsed.get('outlook'),
+                    {"positive", "neutral", "negative"},
+                    "neutral",
+                ),
+                summary=parsed.get('summary') or self._generate_fallback_summary(sector, industry_data),
+                as_of=industry_data.get('as_of'),
+                data_source=industry_data.get('data_source', 'unknown'),
+                is_fallback=industry_data.get('is_fallback', False),
             )
 
-        except json.JSONDecodeError:
+        except Exception:
             return self._fallback_analysis(sector, industry_data)
 
     def _fallback_analysis(self, sector: str, industry_data: dict) -> IndustryContext:
@@ -158,7 +165,10 @@ class IndustryAnalystAgent:
                 "创新和研发投入持续增加"
             ],
             outlook=outlook,
-            summary=self._generate_fallback_summary(sector, industry_data)
+            summary=self._generate_fallback_summary(sector, industry_data),
+            as_of=industry_data.get('as_of'),
+            data_source=industry_data.get('data_source', 'fallback industry analysis'),
+            is_fallback=True,
         )
 
     def _generate_fallback_summary(self, sector: str, industry_data: dict) -> str:

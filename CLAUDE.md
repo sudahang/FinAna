@@ -47,7 +47,7 @@ FinAna/
 │   ├── equity_analyst_ai.py    # 个股分析师 (AI)
 │   └── report_synthesizer_ai.py # 报告合成器 (AI)
 ├── workflows/                  # 工作流编排
-│   └── ai_research_workflow.py # AI 投研工作流
+│   └── langgraph_workflow.py   # LangGraph AI 投研工作流
 ├── data/                       # 数据层
 │   ├── schemas.py              # Pydantic 数据模型
 │   └── finance_data.py         # 真实财经数据获取

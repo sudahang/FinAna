@@ -6,6 +6,7 @@ from memory.conversation_memory import get_conversation_memory
 from dotenv import load_dotenv
 import os
 import uuid
+import logging
 
 # Setup logging
 from logging_config import setup_logging, get_logger
@@ -380,7 +381,8 @@ def run_analysis_streaming(query: str):
 
 def chat_with_memory(
     message: str,
-    history: list[list[str]]
+    history: list[list[str]],
+    session_id: str | None = None,
 ) -> str:
     """
     Chat function with conversation memory support.
@@ -407,9 +409,8 @@ def chat_with_memory(
 2. 将 .env.example 复制为 .env 并填入 API Key
 3. 重启服务"""
 
-        # Generate or get session ID from history length (simple session tracking)
-        # In a real implementation, you'd use a proper session management
-        session_id = f"webui_session_{len(history)}"
+        # Keep a stable session across turns so server-side context can be reused.
+        session_id = session_id or str(uuid.uuid4())
 
         # Get conversation history from Gradio format
         conv_history = []
@@ -449,6 +450,11 @@ def clear_conversation() -> tuple[str, list]:
     return "✅ 对话历史已清除，开始新的对话吧！", []
 
 
+def new_chat_session() -> str:
+    """Create a new stable session ID for the Web UI chat."""
+    return str(uuid.uuid4())
+
+
 def create_demo() -> gr.Blocks:
     """Create the Gradio demo application with modern design and multi-turn chat."""
 
@@ -471,6 +477,7 @@ def create_demo() -> gr.Blocks:
 
             # Tab 1: Chat Mode (Multi-turn)
             with gr.TabItem("💬 多轮对话", id=0) as chat_tab:
+                chat_session_state = gr.State(value=str(uuid.uuid4()))
                 with gr.Row(equal_height=True):
                     # Left column - Chat input and controls
                     with gr.Column(scale=1, min_width=400):
@@ -524,6 +531,7 @@ def create_demo() -> gr.Blocks:
                             fn=chat_with_memory,
                             title="",
                             description="输入您的问题，获取智能投资分析",
+                            additional_inputs=[chat_session_state],
                             examples=[
                                 ["分析特斯拉股票"],
                                 ["特斯拉的竞争优势是什么？"],
@@ -540,6 +548,8 @@ def create_demo() -> gr.Blocks:
                             clear_btn="🗑️ 清除",
                             theme="soft"
                         )
+
+                        clear_btn.click(fn=new_chat_session, outputs=chat_session_state)
 
                         gr.HTML('</div>')
 

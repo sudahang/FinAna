@@ -3,6 +3,7 @@
 from llm.client import LLMClient, get_llm_client
 from data.finance_data import FinancialDataFetcher, get_data_fetcher
 from data.schemas import CompanyAnalysis, CompanyData, NewsItem
+from agents.structured_output import extract_json_object, normalize_choice, normalize_string_list, repair_json_response
 from skills.stock_info.stock_info import (
     get_stock_quote,
     get_company_info,
@@ -11,7 +12,6 @@ from skills.stock_info.stock_info import (
     search_stock_info
 )
 from datetime import datetime
-import json
 
 
 class EquityAnalystAgent:
@@ -77,6 +77,16 @@ class EquityAnalystAgent:
         # US stock or return as-is
         return symbol
 
+    def _get_market_metadata(self, symbol: str) -> dict:
+        """Infer market and currency from a standardized symbol."""
+        symbol_upper = symbol.upper()
+        symbol_lower = symbol.lower()
+        if symbol_lower.startswith(("sh", "sz")):
+            return {"market": "A股", "currency": "CNY", "data_source": "stock_info / 新浪财经 / 东方财富"}
+        if symbol_upper.startswith("HK"):
+            return {"market": "港股", "currency": "HKD", "data_source": "stock_info / 新浪财经 / 东方财富"}
+        return {"market": "美股", "currency": "USD", "data_source": "stock_info / 东方财富 / LLM fallback"}
+
     def analyze(self, symbol: str) -> CompanyAnalysis:
         """
         Perform company analysis using AI and real data.
@@ -111,7 +121,7 @@ class EquityAnalystAgent:
             history_data = []
 
         # Build company data object
-        company_data = self._build_company_data(symbol, quote_data, company_info)
+        company_data = self._build_company_data(std_symbol, quote_data, company_info)
 
         # Build prompt for AI analysis
         user_prompt = self._build_analysis_prompt(company_data, news_data, history_data)
@@ -121,6 +131,11 @@ class EquityAnalystAgent:
             response = self.llm.chat(
                 messages=[{"role": "user", "content": user_prompt}],
                 system_prompt=self.SYSTEM_PROMPT
+            )
+            response = repair_json_response(
+                self.llm,
+                response,
+                '{"financial_health": "string", "technical_indicator": "buy|hold|sell", "risks": ["string"], "summary": "string"}',
             )
 
             # Parse AI response
@@ -138,13 +153,19 @@ class EquityAnalystAgent:
     ) -> CompanyData:
         """Build CompanyData from quote and company info."""
         if quote_data and quote_data.get('current_price', 0) > 0:
+            metadata = self._get_market_metadata(symbol)
             return CompanyData(
                 symbol=symbol,
                 name=quote_data.get('name', symbol),
                 sector=company_info.get('industry', 'Unknown') if company_info else 'Unknown',
                 market_cap=quote_data.get('market_cap', 0),
                 pe_ratio=quote_data.get('pe_ratio', 0),
-                current_price=quote_data.get('current_price', 0)
+                current_price=quote_data.get('current_price', 0),
+                market=metadata["market"],
+                currency=metadata["currency"],
+                as_of=quote_data.get('timestamp') or datetime.now(),
+                data_source=metadata["data_source"],
+                is_fallback=False,
             )
         else:
             # Use LLM to get company info when real data unavailable
@@ -177,14 +198,16 @@ class EquityAnalystAgent:
                 messages=[{"role": "user", "content": price_prompt}],
                 system_prompt="你是一位专业的金融数据助手，提供准确的实时股票信息。请使用联网搜索获取最新数据。"
             )
+            response = repair_json_response(
+                self.llm,
+                response,
+                '{"name": "string", "current_price": 0.0, "sector": "string", "pe_ratio": 0.0, "market_cap": 0.0}',
+            )
             print(f"  ✅ LLM 返回数据")
 
-            # Parse JSON response
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
-            if start_idx >= 0 and end_idx > start_idx:
-                json_str = response[start_idx:end_idx]
-                parsed = json.loads(json_str)
+            parsed = extract_json_object(response)
+            if parsed:
+                metadata = self._get_market_metadata(symbol)
 
                 return CompanyData(
                     symbol=symbol,
@@ -192,20 +215,31 @@ class EquityAnalystAgent:
                     sector=parsed.get('sector', 'Unknown'),
                     market_cap=parsed.get('market_cap', 0),
                     pe_ratio=parsed.get('pe_ratio', 0) or 0,
-                    current_price=parsed.get('current_price', 0) or 0
+                    current_price=parsed.get('current_price', 0) or 0,
+                    market=metadata["market"],
+                    currency=metadata["currency"],
+                    as_of=datetime.now(),
+                    data_source="LLM fallback company lookup",
+                    is_fallback=True,
                 )
 
         except Exception as e:
             print(f"  ❌ LLM 查询失败：{e}")
 
         # Ultimate fallback - use symbol as name with generic data
+        metadata = self._get_market_metadata(symbol)
         return CompanyData(
             symbol=symbol,
             name=f'{symbol} Inc.',
             sector='Unknown',
             market_cap=0,
             pe_ratio=0,
-            current_price=0
+            current_price=0,
+            market=metadata["market"],
+            currency=metadata["currency"],
+            as_of=datetime.now(),
+            data_source="default company fallback",
+            is_fallback=True,
         )
 
     def _build_analysis_prompt(
@@ -226,9 +260,13 @@ class EquityAnalystAgent:
         return f"""请分析 {company.name} ({company.symbol}) 的投资价值：
 
 【公司数据】
-- 当前股价：{company.current_price:.2f}{'元' if company.symbol.startswith(('sh', 'sz', 'HK')) else '$'}
+- 当前股价：{company.current_price:.2f} {company.currency}
 - 市盈率：{company.pe_ratio if company.pe_ratio else 'N/A'}
 - 市值：{company.market_cap if company.market_cap else 'N/A'}
+- 市场：{company.market}
+- 数据来源：{company.data_source}
+- 数据时间：{company.as_of or '未标注'}
+- 是否 fallback/默认数据：{company.is_fallback}
 
 【技术指标】
 {tech_analysis}
@@ -293,14 +331,7 @@ class EquityAnalystAgent:
     ) -> CompanyAnalysis:
         """Parse AI response into structured CompanyAnalysis."""
         try:
-            # Extract JSON from response
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
-            if start_idx >= 0 and end_idx > start_idx:
-                json_str = response[start_idx:end_idx]
-                parsed = json.loads(json_str)
-            else:
-                parsed = {}
+            parsed = extract_json_object(response)
 
             # Convert news to NewsItem format
             news_items = [
@@ -321,12 +352,16 @@ class EquityAnalystAgent:
                     f"{company.name}财务状况总体稳健，建议关注后续财报。"
                 ),
                 recent_news=news_items,
-                technical_indicator=parsed.get('technical_indicator', 'hold'),
-                risks=parsed.get('risks', ['市场波动风险']),
-                summary=parsed.get('summary', self._generate_fallback_summary(company))
+                technical_indicator=normalize_choice(
+                    parsed.get('technical_indicator'),
+                    {"buy", "hold", "sell"},
+                    "hold",
+                ),
+                risks=normalize_string_list(parsed.get('risks'), ['市场波动风险']),
+                summary=parsed.get('summary') or self._generate_fallback_summary(company)
             )
 
-        except json.JSONDecodeError:
+        except Exception:
             return self._fallback_analysis(company, news)
 
     def _fallback_analysis(
@@ -335,14 +370,6 @@ class EquityAnalystAgent:
         news: list[dict]
     ) -> CompanyAnalysis:
         """Generate fallback analysis without AI."""
-        # Determine currency based on market
-        if company.symbol.startswith(("sh", "sz")):
-            currency = "元"
-        elif company.symbol.startswith("HK"):
-            currency = "港元"
-        else:
-            currency = "$"
-
         # Simple heuristic based on price data
         if company.current_price > 0:
             # Mock technical signal based on symbol hash
@@ -365,7 +392,7 @@ class EquityAnalystAgent:
             company=company,
             financial_health=(
                 f"{company.name}基本面稳健，财务状况良好。"
-                f"当前股价{company.current_price:.2f}{currency}，建议结合行业动态综合判断。"
+                f"当前股价{company.current_price:.2f}{company.currency}，建议结合行业动态综合判断。"
             ),
             recent_news=news_items if news_items else [],
             technical_indicator=tech,
@@ -380,17 +407,9 @@ class EquityAnalystAgent:
 
     def _generate_fallback_summary(self, company: CompanyData) -> str:
         """Generate a simple fallback summary."""
-        # Determine currency based on market
-        if company.symbol.startswith(("sh", "sz")):
-            currency = "元"
-        elif company.symbol.startswith("HK"):
-            currency = "港元"
-        else:
-            currency = "$"
-
         return (
             f"{company.name}（{company.symbol}）作为行业知名企业，"
-            f"具备较强的竞争力和抗风险能力。当前股价{company.current_price:.2f}{currency}，"
+            f"具备较强的竞争力和抗风险能力。当前股价{company.current_price:.2f}{company.currency}，"
             f"建议投资者结合自身风险承受能力，采取分散投资策略。"
         )
 

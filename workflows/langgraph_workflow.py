@@ -1,6 +1,6 @@
 """AI-powered investment research workflow using LangGraph."""
 
-from typing import TypedDict, Annotated, Literal
+from typing import TypedDict, Annotated
 from datetime import datetime
 from data.schemas import ResearchReport, MacroContext, IndustryContext, CompanyAnalysis
 from agents.macro_analyst_ai import MacroAnalystAgent
@@ -23,10 +23,13 @@ class WorkflowState(TypedDict):
     query: str
     session_id: str | None  # Session ID for multi-turn conversation
     conversation_history: list[dict] | None  # Previous conversation history
+    conversation_context: str
+    session_context: dict | None
     country: str
     sector: str
     symbol: str
     query_type: str  # 'stock_analysis', 'industry_analysis', 'macro_analysis'
+    market_metadata: dict | None
     macro_context: MacroContext | None
     industry_context: IndustryContext | None
     company_analysis: CompanyAnalysis | None
@@ -78,6 +81,7 @@ class AIResearchWorkflow:
         # Report cache for fast retrieval of similar reports
         self.report_cache = report_cache or get_report_cache_service() if enable_cache else None
         self.enable_cache = enable_cache
+        self.last_from_cache = False
 
         # Build the LangGraph workflow
         self.graph = self._build_graph()
@@ -137,6 +141,67 @@ class AIResearchWorkflow:
 
         return builder.compile()
 
+    def _build_conversation_context(
+        self,
+        history: list[dict] | None,
+        session_context: dict | None,
+    ) -> str:
+        """Build a concise context block for follow-up questions."""
+        context_parts = []
+        if history:
+            context_parts.append(format_history_for_llm(history, max_history_messages=6))
+
+        if session_context:
+            useful_keys = [
+                "symbol",
+                "country",
+                "sector",
+                "query_type",
+                "last_recommendation",
+                "last_target_price",
+            ]
+            retained = {
+                key: session_context.get(key)
+                for key in useful_keys
+                if session_context.get(key) not in (None, "")
+            }
+            if retained:
+                context_parts.append(f"已保留的会话上下文：{retained}")
+
+        return "\n\n".join(context_parts)
+
+    def _get_market_metadata(self, country: str, symbol: str = "") -> dict:
+        """Return lightweight market metadata for display and report prompts."""
+        country = (country or "us").lower()
+        if country == "china" or symbol.lower().startswith(("sh", "sz")):
+            return {
+                "market": "A股",
+                "currency": "CNY",
+                "price_prefix": "¥",
+                "data_source": "新浪财经 / 东方财富",
+            }
+        if country == "hk" or symbol.upper().startswith("HK"):
+            return {
+                "market": "港股",
+                "currency": "HKD",
+                "price_prefix": "HK$",
+                "data_source": "新浪财经 / 东方财富",
+            }
+        return {
+            "market": "美股",
+            "currency": "USD",
+            "price_prefix": "$",
+            "data_source": "东方财富 / 公开市场数据",
+        }
+
+    def _format_price(self, price: float | None, market_metadata: dict | None) -> str:
+        """Format a price using the resolved market currency."""
+        if price is None:
+            return "N/A"
+        prefix = (market_metadata or {}).get("price_prefix", "")
+        currency = (market_metadata or {}).get("currency", "")
+        return f"{prefix}{price:.2f} {currency}".strip()
+
     def _detect_params(self, state: WorkflowState) -> dict:
         """Detect country, symbol, and sector from query using Input Router Agent."""
         query = state["query"]
@@ -149,11 +214,13 @@ class AIResearchWorkflow:
 
         # Use Input Router Agent to parse the query
         params = self.input_router.parse_query(query)
+        session_context = self.memory.get_context(session_id) if session_id else {}
 
-        country = params.get('country', 'us')
-        symbol = params.get('symbol', 'TSLA')
-        sector = params.get('sector', '科技')
-        query_type = params.get('query_type', 'stock_analysis')
+        country = params.get('country') or session_context.get("country") or 'us'
+        symbol = params.get('symbol') or session_context.get("symbol") or 'TSLA'
+        sector = params.get('sector') or session_context.get("sector") or '科技'
+        query_type = params.get('query_type') or session_context.get("query_type") or 'stock_analysis'
+        market_metadata = self._get_market_metadata(country, symbol)
 
         # Log detection info
         detection_info = f"识别结果：国家={country}, 股票={symbol}, 行业={sector}, 类型={query_type}, 置信度={params.get('confidence', 0):.0%}"
@@ -161,11 +228,14 @@ class AIResearchWorkflow:
 
         # Store context in conversation memory if session exists
         if session_id:
+            self.memory.get_or_create_session(session_id)
             self.memory.update_context(session_id, {
                 "country": country,
                 "symbol": symbol,
                 "sector": sector,
                 "query_type": query_type,
+                "market": market_metadata["market"],
+                "currency": market_metadata["currency"],
                 "last_query": query
             })
 
@@ -190,8 +260,10 @@ class AIResearchWorkflow:
             "symbol": symbol,
             "sector": sector,
             "query_type": query_type,
+            "market_metadata": market_metadata,
+            "session_context": session_context,
             "messages": state.get("messages", []) + [
-                f"### 🎯 {step_label}: 查询分析完成\n\n- {detection_info}{context_note}"
+                f"### 🎯 {step_label}: 查询分析完成\n\n- {detection_info}\n- 市场={market_metadata['market']}, 币种={market_metadata['currency']}\n- 数据源提示：{market_metadata['data_source']}{context_note}"
             ]
         }
 
@@ -208,6 +280,8 @@ class AIResearchWorkflow:
 
     def _route_after_macro(self, state: WorkflowState) -> str:
         """Route after macro analysis."""
+        if state.get("error"):
+            return "synthesize_report"
         query_type = state.get("query_type", "stock_analysis")
         if query_type == "macro_analysis":
             return "synthesize_report"
@@ -215,6 +289,8 @@ class AIResearchWorkflow:
 
     def _route_after_industry(self, state: WorkflowState) -> str:
         """Route after industry analysis."""
+        if state.get("error"):
+            return "synthesize_report"
         query_type = state.get("query_type", "stock_analysis")
         if query_type in ("macro_analysis", "industry_analysis"):
             return "synthesize_report"
@@ -323,7 +399,7 @@ class AIResearchWorkflow:
             return {
                 "macro_context": macro_context,
                 "messages": state.get("messages", []) + [
-                    f"### 📈 步骤 1/{total_steps}: 宏观经济分析完成\n\n- **国家**: {country}\n- **GDP 增长**: {macro_context.gdp_growth}%\n- **通胀率**: {macro_context.inflation_rate}%\n- **市场情绪**: {macro_context.market_sentiment}"
+                    f"### 📈 步骤 1/{total_steps}: 宏观经济分析完成\n\n- **国家**: {country}\n- **GDP 增长**: {macro_context.gdp_growth}%\n- **通胀率**: {macro_context.inflation_rate}%\n- **市场情绪**: {macro_context.market_sentiment}\n- **数据来源**: {macro_context.data_source}"
                 ]
             }
         except Exception as e:
@@ -341,12 +417,12 @@ class AIResearchWorkflow:
         logger.info(f"[TRACE={trace_id}] Running industry analysis for sector: {sector}")
 
         try:
-            industry_context = self.industry_analyst.analyze_with_context(query)
+            industry_context = self.industry_analyst.analyze(sector)
             logger.info(f"[TRACE={trace_id}] Industry analysis completed: growth={industry_context.sector_growth}%, outlook={industry_context.outlook}")
             return {
                 "industry_context": industry_context,
                 "messages": state.get("messages", []) + [
-                    f"### 🏭 步骤 2/4: 行业分析完成\n\n- **行业**: {sector}\n- **行业增长**: {industry_context.sector_growth}%\n- **行业前景**: {industry_context.outlook}"
+                    f"### 🏭 步骤 2/4: 行业分析完成\n\n- **行业**: {sector}\n- **行业增长**: {industry_context.sector_growth}%\n- **行业前景**: {industry_context.outlook}\n- **数据来源**: {industry_context.data_source}"
                 ]
             }
         except Exception as e:
@@ -359,16 +435,19 @@ class AIResearchWorkflow:
     def _run_equity_analysis(self, state: WorkflowState) -> dict:
         """Run equity analysis."""
         symbol = state.get("symbol", "TSLA")
+        market_metadata = state.get("market_metadata") or self._get_market_metadata(state.get("country", "us"), symbol)
         trace_id = get_trace_id()
         logger.info(f"[TRACE={trace_id}] Running equity analysis for symbol: {symbol}")
 
         try:
             company_analysis = self.equity_analyst.analyze(symbol)
-            logger.info(f"[TRACE={trace_id}] Equity analysis completed: company={company_analysis.company.name}, current_price=${company_analysis.company.current_price:.2f}")
+            price_text = self._format_price(company_analysis.company.current_price, market_metadata)
+            logger.info(f"[TRACE={trace_id}] Equity analysis completed: company={company_analysis.company.name}, current_price={price_text}")
             return {
                 "company_analysis": company_analysis,
                 "messages": state.get("messages", []) + [
-                    f"### 🏢 步骤 3/4: 公司分析完成\n\n- **公司**: {company_analysis.company.name}\n- **股票代码**: {symbol}\n- **当前股价**: ${company_analysis.company.current_price:.2f}\n- **技术信号**: {company_analysis.technical_indicator}"
+                    f"### 🏢 步骤 3/4: 公司分析完成\n\n- **公司**: {company_analysis.company.name}\n- **股票代码**: {symbol}\n- **当前股价**: {price_text}\n- **技术信号**: {company_analysis.technical_indicator}"
+                    f"### 🏢 步骤 3/4: 公司分析完成\n\n- **公司**: {company_analysis.company.name}\n- **股票代码**: {symbol}\n- **当前股价**: {price_text}\n- **技术信号**: {company_analysis.technical_indicator}\n- **数据来源**: {company_analysis.company.data_source}"
                 ]
             }
         except Exception as e:
@@ -386,6 +465,8 @@ class AIResearchWorkflow:
         industry_context = state.get("industry_context")
         company_analysis = state.get("company_analysis")
         query_type = state.get("query_type", "stock_analysis")
+        conversation_context = state.get("conversation_context", "")
+        market_metadata = state.get("market_metadata") or self._get_market_metadata(state.get("country", "us"), state.get("symbol", ""))
         trace_id = get_trace_id()
 
         # At least one analysis must be present
@@ -404,6 +485,8 @@ class AIResearchWorkflow:
                 industry_context=industry_context,
                 company_analysis=company_analysis,
                 query_type=query_type,
+                conversation_context=conversation_context,
+                market_metadata=market_metadata,
             )
             logger.info(f"[TRACE={trace_id}] Report synthesized successfully, length: {len(report.full_report)} chars, recommendation: {report.recommendation}")
 
@@ -430,7 +513,7 @@ class AIResearchWorkflow:
             return {
                 "report": report,
                 "messages": state.get("messages", []) + [
-                    f"### 📄 步骤 {current_step}/{total_steps}: 报告合成完成\n\n- **投资建议**: {report.recommendation}\n- **目标价格**: ${report.target_price}\n- **报告长度**: {len(report.full_report)} 字符"
+                    f"### 📄 步骤 {current_step}/{total_steps}: 报告合成完成\n\n- **投资建议**: {report.recommendation}\n- **目标价格**: {self._format_price(report.target_price, market_metadata)}\n- **报告长度**: {len(report.full_report)} 字符"
                 ]
             }
         except Exception as e:
@@ -460,6 +543,7 @@ class AIResearchWorkflow:
         # Generate trace ID for this request
         import uuid
         trace_id = str(uuid.uuid4())[:8]
+        self.last_from_cache = False
 
         # Set trace ID in context for propagation to storage layer
         set_trace_id(trace_id)
@@ -471,6 +555,7 @@ class AIResearchWorkflow:
             logger.info(f"[TRACE={trace_id}] Checking cache for similar reports")
             cached_report = self.report_cache.find_cached_report(query)
             if cached_report:
+                self.last_from_cache = True
                 logger.info(f"[TRACE={trace_id}] CACHE HIT: Found cached report, returning directly")
                 # Still add to conversation history
                 if session_id:
@@ -490,6 +575,15 @@ class AIResearchWorkflow:
             else:
                 logger.info(f"[TRACE={trace_id}] CACHE MISS: No similar report found, will generate new one")
 
+        session_context = {}
+        prior_history = conversation_history or []
+        if session_id:
+            session_context = self.memory.get_context(session_id)
+            if conversation_history is None:
+                prior_history = self.memory.get_history(session_id)
+
+        conversation_context = self._build_conversation_context(prior_history, session_context)
+
         # Get or create session if session_id provided
         if session_id:
             session = self.memory.get_or_create_session(session_id)
@@ -501,11 +595,14 @@ class AIResearchWorkflow:
         initial_state: WorkflowState = {
             "query": query,
             "session_id": session_id,
-            "conversation_history": conversation_history or [],
+            "conversation_history": prior_history,
+            "conversation_context": conversation_context,
+            "session_context": session_context,
             "country": "",
             "sector": "",
             "symbol": "",
             "query_type": "stock_analysis",
+            "market_metadata": None,
             "macro_context": None,
             "industry_context": None,
             "company_analysis": None,

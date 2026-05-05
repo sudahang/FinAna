@@ -70,6 +70,8 @@ class ReportSynthesizerAgent:
         industry_context: IndustryContext | None = None,
         company_analysis: CompanyAnalysis | None = None,
         query_type: str = "stock_analysis",
+        conversation_context: str = "",
+        market_metadata: dict | None = None,
     ) -> ResearchReport:
         """
         Synthesize analysis with partial contexts for flexible report types.
@@ -80,12 +82,20 @@ class ReportSynthesizerAgent:
             industry_context: Optional industry analysis.
             company_analysis: Optional company analysis.
             query_type: Type of analysis requested.
+            conversation_context: Prior conversation/context for follow-up questions.
+            market_metadata: Resolved market/currency/source metadata.
 
         Returns:
             ResearchReport containing the investment report.
         """
         user_prompt = self._build_partial_synthesis_prompt(
-            query, macro_context, industry_context, company_analysis, query_type
+            query,
+            macro_context,
+            industry_context,
+            company_analysis,
+            query_type,
+            conversation_context,
+            market_metadata,
         )
 
         try:
@@ -107,13 +117,26 @@ class ReportSynthesizerAgent:
                 recommendation=recommendation,
                 target_price=target_price,
                 time_horizon="3-6 个月",
-                full_report=response
+                full_report=response,
+                market=market_metadata.get("market") if market_metadata else None,
+                currency=market_metadata.get("currency") if market_metadata else None,
+                data_sources=self._collect_data_sources(
+                    macro_context,
+                    industry_context,
+                    company_analysis,
+                    market_metadata,
+                ),
             )
 
         except Exception as e:
             print(f"AI synthesis failed, using fallback: {e}")
             return self._fallback_partial_synthesize(
-                query, macro_context, industry_context, company_analysis, query_type
+                query,
+                macro_context,
+                industry_context,
+                company_analysis,
+                query_type,
+                market_metadata,
             )
 
     def _build_synthesis_prompt(
@@ -133,9 +156,27 @@ class ReportSynthesizerAgent:
         industry: IndustryContext | None,
         company: CompanyAnalysis | None,
         query_type: str = "stock_analysis",
+        conversation_context: str = "",
+        market_metadata: dict | None = None,
     ) -> str:
         """Build prompt for AI synthesis with partial contexts."""
         sections = [f"【用户查询】\n{query}\n"]
+        market_metadata = market_metadata or {}
+
+        if conversation_context:
+            sections.append(f"""【多轮对话上下文】
+{conversation_context}
+
+请将以上上下文仅用于理解追问指代，不要把历史结论当作未经验证的事实。
+""")
+
+        if market_metadata:
+            sections.append(f"""【市场与数据口径】
+- 市场：{market_metadata.get('market', '未知')}
+- 币种：{market_metadata.get('currency', '未知')}
+- 主要数据源：{market_metadata.get('data_source', '未标注')}
+- 生成时间：以系统运行时数据为准；若数据来自 fallback 或默认值，必须在报告中说明局限。
+""")
 
         if macro:
             sections.append(f"""【宏观经济分析】
@@ -159,8 +200,10 @@ class ReportSynthesizerAgent:
 
         if company:
             risks_str = ", ".join(company.risks[:3]) if company.risks else "无"
+            prefix = market_metadata.get("price_prefix", "$")
+            currency = market_metadata.get("currency", "USD")
             sections.append(f"""【公司分析 - {company.company.name} ({company.company.symbol})】
-- 当前股价：${company.company.current_price:.2f}
+- 当前股价：{prefix}{company.company.current_price:.2f} {currency}
 - 财务健康：{company.financial_health}
 - 技术信号：{company.technical_indicator}
 - 主要风险：{risks_str}
@@ -179,7 +222,8 @@ class ReportSynthesizerAgent:
 请生成一份完整的 Markdown 格式投资研究报告，包含：
 {requirements}
 
-报告应当专业、全面，适合个人投资者参考。"""
+报告应当专业、全面，适合个人投资者参考。
+请在报告末尾增加“数据来源与局限性”小节，列出主要数据来源、币种口径、生成时间和非投资建议声明。"""
 
     def _extract_recommendation(
         self,
@@ -254,6 +298,25 @@ class ReportSynthesizerAgent:
         """Generate fallback report without AI."""
         return self._fallback_partial_synthesize(query, macro, industry, company, "stock_analysis")
 
+    def _collect_data_sources(
+        self,
+        macro: MacroContext | None,
+        industry: IndustryContext | None,
+        company: CompanyAnalysis | None,
+        market_metadata: dict | None = None,
+    ) -> list[str]:
+        """Collect unique source labels for report metadata."""
+        sources = []
+        for source in [
+            getattr(macro, "data_source", None),
+            getattr(industry, "data_source", None),
+            getattr(company.company, "data_source", None) if company else None,
+            (market_metadata or {}).get("data_source"),
+        ]:
+            if source and source not in sources:
+                sources.append(source)
+        return sources
+
     def _fallback_partial_synthesize(
         self,
         query: str,
@@ -261,6 +324,7 @@ class ReportSynthesizerAgent:
         industry: IndustryContext | None,
         company: CompanyAnalysis | None,
         query_type: str = "stock_analysis",
+        market_metadata: dict | None = None,
     ) -> ResearchReport:
         """Generate fallback report without AI, supporting partial contexts."""
         # Determine recommendation based on available signals
@@ -306,7 +370,14 @@ class ReportSynthesizerAgent:
 
         # Generate template report
         full_report = self._generate_partial_template_report(
-            query, macro, industry, company, recommendation, target_price, query_type
+            query,
+            macro,
+            industry,
+            company,
+            recommendation,
+            target_price,
+            query_type,
+            market_metadata,
         )
 
         # Build investment thesis from available analyses
@@ -328,7 +399,10 @@ class ReportSynthesizerAgent:
             recommendation=recommendation,
             target_price=round(target_price, 2) if target_price else None,
             time_horizon="3-6 个月",
-            full_report=full_report
+            full_report=full_report,
+            market=(market_metadata or {}).get("market"),
+            currency=(market_metadata or {}).get("currency"),
+            data_sources=self._collect_data_sources(macro, industry, company, market_metadata),
         )
 
     def _generate_template_report(
@@ -354,10 +428,16 @@ class ReportSynthesizerAgent:
         recommendation: str,
         target_price: float | None,
         query_type: str = "stock_analysis",
+        market_metadata: dict | None = None,
     ) -> str:
         """Generate a template-based report with partial contexts."""
+        market_metadata = market_metadata or {}
+        price_prefix = market_metadata.get("price_prefix", "$")
+        currency = market_metadata.get("currency", "USD")
+        market = market_metadata.get("market", "未标注")
+        data_source = market_metadata.get("data_source", "未标注")
         rec_text = {"buy": "买入", "hold": "持有", "sell": "卖出"}[recommendation]
-        target_price_str = f"${target_price:.2f}" if target_price else "N/A"
+        target_price_str = f"{price_prefix}{target_price:.2f} {currency}" if target_price else "N/A"
 
         sections = [f"""# 投资研究报告
 
@@ -420,7 +500,7 @@ class ReportSynthesizerAgent:
 
 | 指标 | 数值 |
 |------|------|
-| 当前股价 | ${company.company.current_price:.2f} |
+| 当前股价 | {price_prefix}{company.company.current_price:.2f} {currency} |
 | 技术信号 | {company.technical_indicator} |
 
 ### 财务健康
@@ -455,6 +535,13 @@ class ReportSynthesizerAgent:
 {conclusion_factors}
 
 ---
+
+## 数据来源与局限性
+
+- 市场：{market}
+- 币种：{currency}
+- 主要数据源：{data_source}
+- 本报告可能包含 fallback 或默认数据，需结合实时行情、财报公告和专业意见复核。
 
 *免责声明：本报告仅供参考，不构成投资建议。投资有风险，决策需谨慎。*
 """)

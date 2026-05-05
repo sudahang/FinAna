@@ -1,0 +1,6 @@
+-r requirements.txt
+
+# Test and quality gates
+pytest-cov
+ruff
+mypy

@@ -343,7 +343,10 @@ class FinancialDataFetcher:
         """
         macro_data = {
             "country": country,
-            "timestamp": datetime.now()
+            "timestamp": datetime.now(),
+            "as_of": datetime.now(),
+            "data_source": "Eastmoney macro endpoint with default fallback",
+            "is_fallback": True,
         }
 
         try:
@@ -390,6 +393,8 @@ class FinancialDataFetcher:
                 "interest_rate": 3.45 if country.lower() == "china" else 5.25,
                 "unemployment_rate": 5.1 if country.lower() == "china" else 3.8
             })
+            macro_data["data_source"] = "default macro fallback"
+            macro_data["is_fallback"] = True
 
         return macro_data
 
@@ -451,10 +456,22 @@ class FinancialDataFetcher:
             sector_lower = sector.lower()
             for key, value in industry_defaults.items():
                 if key in sector_lower:
-                    return {"sector": sector, **value}
+                    return {
+                        "sector": sector,
+                        **value,
+                        "as_of": datetime.now(),
+                        "data_source": "Eastmoney industry endpoint with default fallback",
+                        "is_fallback": True,
+                    }
 
             # Default to technology if no match
-            return {"sector": sector, **industry_defaults["technology"]}
+            return {
+                "sector": sector,
+                **industry_defaults["technology"],
+                "as_of": datetime.now(),
+                "data_source": "Eastmoney industry endpoint with default fallback",
+                "is_fallback": True,
+            }
 
         except Exception as e:
             print(f"Error fetching industry data: {e}")
@@ -462,7 +479,10 @@ class FinancialDataFetcher:
                 "sector": sector,
                 "sector_growth": 8.0,
                 "avg_pe_ratio": 25.0,
-                "market_sentiment": "neutral"
+                "market_sentiment": "neutral",
+                "as_of": datetime.now(),
+                "data_source": "default industry fallback",
+                "is_fallback": True,
             }
 
 

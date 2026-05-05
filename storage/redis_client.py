@@ -319,8 +319,9 @@ class RedisClient:
 
             for key in keys:
                 data = self.client.hgetall(key)
+                metadata = json.loads(data.get("metadata", "{}"))
                 summary = data.get("summary", "").lower()
-                query = data.get("query", "").lower()
+                query = metadata.get("query", "").lower()
 
                 # Count keyword matches
                 matches = sum(1 for kw in keywords if kw in summary or kw in query)
@@ -334,6 +335,7 @@ class RedisClient:
                         "created_at": data.get("created_at", ""),
                         "match_type": "keyword",
                         "similarity": matches / len(keywords),
+                        "metadata": metadata,
                     })
 
                     if len(results) >= limit * 2:  # Get more for sorting

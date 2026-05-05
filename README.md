@@ -342,8 +342,7 @@ FinAna/
 │   ├── equity_analyst_ai.py    # 个股分析师
 │   └── report_synthesizer_ai.py # 报告合成器
 ├── workflows/                  # 工作流模块
-│   ├── langgraph_workflow.py   # LangGraph 工作流
-│   └── ai_research_workflow.py # AI 投研工作流
+│   └── langgraph_workflow.py   # LangGraph AI 投研工作流
 ├── memory/                     # 对话记忆模块
 │   ├── __init__.py
 │   └── conversation_memory.py  # 对话记忆管理

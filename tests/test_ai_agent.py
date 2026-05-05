@@ -13,7 +13,7 @@ from agents.macro_analyst_ai import MacroAnalystAgent
 from agents.industry_analyst_ai import IndustryAnalystAgent
 from agents.equity_analyst_ai import EquityAnalystAgent
 from agents.report_synthesizer_ai import ReportSynthesizerAgent
-from workflows.ai_research_workflow import AIResearchWorkflow
+from workflows.langgraph_workflow import AIResearchWorkflow
 
 
 def test_llm_client():

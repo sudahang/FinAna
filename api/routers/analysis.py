@@ -65,11 +65,11 @@ async def start_analysis(request: AnalysisRequest) -> AnalysisResponse:
         "error": None
     }
 
-    # Execute workflow in background (simplified for demo)
-    # In production, use Celery or similar for background tasks
+    # Execute workflow inline for the demo.
+    # In production, use Celery/RQ/Arq and persist task state outside this process.
     try:
         logger.info(f"[TRACE={trace_id}] Creating AIResearchWorkflow instance")
-        workflow = AIResearchWorkflow()
+        workflow = AIResearchWorkflow(enable_cache=request.use_cache is not False)
         logger.info(f"[TRACE={trace_id}] Executing workflow")
         report = workflow.execute(request.query, session_id=session_id)
 
@@ -77,7 +77,8 @@ async def start_analysis(request: AnalysisRequest) -> AnalysisResponse:
             "status": "completed",
             "report": report.full_report,
             "recommendation": report.recommendation,
-            "target_price": report.target_price
+            "target_price": report.target_price,
+            "from_cache": workflow.last_from_cache,
         })
 
         logger.info(f"[TRACE={trace_id}] Analysis completed successfully: task_id={task_id}, recommendation={report.recommendation}")
@@ -93,6 +94,8 @@ async def start_analysis(request: AnalysisRequest) -> AnalysisResponse:
         task_id=task_id,
         status=task_store[task_id]["status"],
         report=task_store[task_id]["report"],
+        error=task_store[task_id]["error"],
+        from_cache=task_store[task_id].get("from_cache", False),
         session_id=session_id
     )
 
@@ -120,16 +123,21 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     logger.info(f"[TRACE={trace_id}] Chat request: session_id={session_id}, query='{request.query[:50]}...', use_cache={request.use_cache}")
 
-    # Get conversation history from memory if available
-    history = conversation_memory.get_history(session_id)
+    # Get conversation history from memory, falling back to request-provided history.
+    request_history = [
+        {"role": msg.role, "content": msg.content}
+        for msg in (request.history or [])
+    ]
+    history = conversation_memory.get_history(session_id) or request_history
     if history:
         logger.debug(f"[TRACE={trace_id}] Retrieved conversation history: {len(history)} messages")
 
     # Execute workflow with session and history
     try:
         # Create workflow with cache enabled/disabled
-        logger.info(f"[TRACE={trace_id}] Creating AIResearchWorkflow (cache={request.use_cache})")
-        workflow = AIResearchWorkflow(enable_cache=request.use_cache)
+        enable_cache = request.use_cache is not False
+        logger.info(f"[TRACE={trace_id}] Creating AIResearchWorkflow (cache={enable_cache})")
+        workflow = AIResearchWorkflow(enable_cache=enable_cache)
         logger.info(f"[TRACE={trace_id}] Executing workflow with session")
         report = workflow.execute(
             query=request.query,
@@ -140,19 +148,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
         # Get updated history
         updated_history = conversation_memory.get_history(session_id)
 
-        # Check if report was served from cache
-        from_cache = False
-        if request.use_cache:
-            cache_service = _get_cache_service()
-            if cache_service:
-                similar = cache_service.redis.find_similar_reports(
-                    query=request.query,
-                    symbol=None,
-                    limit=1,
-                )
-                if similar and similar[0].get("similarity", 0) == 1.0:
-                    from_cache = True
-                    logger.info(f"[TRACE={trace_id}] Report served from cache")
+        from_cache = workflow.last_from_cache
+        if from_cache:
+            logger.info(f"[TRACE={trace_id}] Report served from cache")
 
         logger.info(f"[TRACE={trace_id}] Chat response: session_id={session_id}, from_cache={from_cache}, recommendation={report.recommendation}")
 

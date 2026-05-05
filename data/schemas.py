@@ -14,6 +14,9 @@ class MacroContext(BaseModel):
     unemployment_rate: float = Field(description="Unemployment rate percentage")
     market_sentiment: str = Field(description="Overall market sentiment: bullish/neutral/bearish")
     summary: str = Field(description="Summary of macroeconomic conditions")
+    as_of: Optional[datetime] = Field(default=None, description="Data timestamp or as-of date")
+    data_source: str = Field(default="unknown", description="Primary data source")
+    is_fallback: bool = Field(default=False, description="Whether fallback/default data was used")
 
 
 class IndustryContext(BaseModel):
@@ -26,6 +29,9 @@ class IndustryContext(BaseModel):
     trends: list[str] = Field(description="Key industry trends")
     outlook: str = Field(description="Industry outlook: positive/neutral/negative")
     summary: str = Field(description="Summary of industry analysis")
+    as_of: Optional[datetime] = Field(default=None, description="Data timestamp or as-of date")
+    data_source: str = Field(default="unknown", description="Primary data source")
+    is_fallback: bool = Field(default=False, description="Whether fallback/default data was used")
 
 
 class CompanyData(BaseModel):
@@ -37,6 +43,11 @@ class CompanyData(BaseModel):
     market_cap: float = Field(description="Market capitalization in billions")
     pe_ratio: float = Field(description="Price-to-earnings ratio")
     current_price: float = Field(description="Current stock price")
+    market: str = Field(default="unknown", description="Listing market")
+    currency: str = Field(default="USD", description="Quote currency")
+    as_of: Optional[datetime] = Field(default=None, description="Quote timestamp or as-of date")
+    data_source: str = Field(default="unknown", description="Primary quote/company data source")
+    is_fallback: bool = Field(default=False, description="Whether fallback/default data was used")
 
 
 class NewsItem(BaseModel):
@@ -72,3 +83,7 @@ class ResearchReport(BaseModel):
     target_price: Optional[float] = Field(description="Target price if applicable")
     time_horizon: str = Field(description="Recommended investment time horizon")
     full_report: str = Field(description="Complete markdown-formatted report")
+    generated_at: datetime = Field(default_factory=datetime.now, description="Report generation timestamp")
+    market: Optional[str] = Field(default=None, description="Primary market for the report")
+    currency: Optional[str] = Field(default=None, description="Primary currency for prices")
+    data_sources: list[str] = Field(default_factory=list, description="Major data sources used")

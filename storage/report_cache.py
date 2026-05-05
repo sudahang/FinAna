@@ -102,6 +102,9 @@ class ReportCacheService:
                 "target_price": str(report.target_price) if report.target_price else "",
                 "investment_thesis": report.investment_thesis,
                 "time_horizon": report.time_horizon,
+                "market": report.market or "",
+                "currency": report.currency or "",
+                "data_sources": report.data_sources,
                 # Store nested context summaries for reconstruction
                 "macro_summary": report.macro_analysis.summary if report.macro_analysis else "",
                 "industry_summary": report.industry_analysis.summary if report.industry_analysis else "",
@@ -249,6 +252,9 @@ class ReportCacheService:
                 target_price=float(metadata.get("target_price", 0)) if metadata.get("target_price") else None,
                 time_horizon=metadata.get("time_horizon", "Medium-term"),
                 full_report=report_content,
+                market=metadata.get("market") or None,
+                currency=metadata.get("currency") or None,
+                data_sources=metadata.get("data_sources", []),
             )
 
         except Exception as e:
@@ -289,9 +295,15 @@ class ReportCacheService:
             logger.info(f"[TRACE={trace_id}] Cached report loaded successfully")
 
             return ResearchReport(
+                query=metadata.get("query", ""),
+                investment_thesis=metadata.get("investment_thesis", "See full report"),
                 full_report=report_content,
                 recommendation=metadata.get("recommendation", "hold"),
                 target_price=float(metadata.get("target_price", 0)) if metadata.get("target_price") else None,
+                time_horizon=metadata.get("time_horizon", "Medium-term"),
+                market=metadata.get("market") or None,
+                currency=metadata.get("currency") or None,
+                data_sources=metadata.get("data_sources", []),
             )
 
         except Exception as e:
