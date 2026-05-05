@@ -1,10 +1,36 @@
 """Tests for API endpoints."""
 
 import pytest
+from types import SimpleNamespace
 from fastapi.testclient import TestClient
 from api.main import app
+from api.routers import analysis
 
 client = TestClient(app)
+
+
+class FakeWorkflow:
+    """Workflow stub so API unit tests do not require an LLM API key."""
+
+    last_from_cache = False
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def execute(self, query, *args, **kwargs):
+        return SimpleNamespace(
+            full_report="# 投资研究报告\n\n测试报告",
+            recommendation="hold",
+            target_price=100.0,
+        )
+
+
+@pytest.fixture(autouse=True)
+def mock_analysis_workflow(monkeypatch):
+    analysis.task_store.clear()
+    monkeypatch.setattr(analysis, "AIResearchWorkflow", FakeWorkflow)
+    yield
+    analysis.task_store.clear()
 
 
 class TestRootEndpoints:
@@ -126,7 +152,7 @@ class TestAnalysisEndpoints:
         data = result_response.json()
         assert data["query"] == "Should I buy Tesla?"
         assert data["recommendation"] in ["buy", "hold", "sell"]
-        assert "# Investment Research Report" in data["full_report"]
+        assert "# 投资研究报告" in data["full_report"]
 
     def test_multiple_sequential_analyses(self):
         """Test multiple sequential analysis requests."""

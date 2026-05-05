@@ -50,10 +50,12 @@ class TestIndustryAnalystAgent:
         agent = IndustryAnalystAgent(llm_client=FakeLLM())
         assert agent.role == "Industry Analyst"
 
-    def test_extract_sector_uses_current_chinese_labels(self):
+    def test_extract_sector_uses_configured_labels(self):
         agent = IndustryAnalystAgent(llm_client=FakeLLM())
         assert agent._extract_sector("分析 Tesla 股票") == "汽车"
-        assert agent._extract_sector("AI 公司") == "科技"
+        assert agent._extract_sector("EV market analysis") == "汽车"
+        assert agent._extract_sector("医疗 sector outlook") == "医疗"
+        assert agent._extract_sector("Technology stocks") == "科技"
         assert agent._extract_sector("Unknown sector") == "科技"
 
     def test_parse_ai_response_normalizes_invalid_outlook(self):
@@ -86,6 +88,13 @@ class TestEquityAnalystAgent:
         assert agent._get_symbol_format("600519") == "sh600519"
         assert agent._get_symbol_format("00700") == "HK00700"
         assert agent._get_market_metadata("HK00700")["currency"] == "HKD"
+
+    def test_extract_symbol_uses_company_mapping(self):
+        agent = EquityAnalystAgent(llm_client=FakeLLM())
+        assert agent._extract_symbol("Analyze NVIDIA stock") == "NVDA"
+        assert agent._extract_symbol("Apple analysis") == "AAPL"
+        assert agent._extract_symbol("Analyze MSFT stock") == "MSFT"
+        assert agent._extract_symbol("Unknown company") == "TSLA"
 
     def test_parse_ai_response_normalizes_signal_and_risks(self):
         agent = EquityAnalystAgent(llm_client=FakeLLM())
@@ -174,6 +183,10 @@ class TestReportSynthesizerAgent:
         )
 
         assert report.recommendation in ["buy", "hold", "sell"]
+        assert "# 投资研究报告" in report.full_report
+        assert "## 宏观经济分析" in report.full_report
+        assert "## 行业分析" in report.full_report
+        assert "## 公司分析" in report.full_report
         assert "数据来源与局限性" in report.full_report
         assert report.market == "美股"
         assert "quote-source" in report.data_sources
