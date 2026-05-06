@@ -2,7 +2,11 @@
 
 from llm.client import LLMClient, get_llm_client
 from data.schemas import ResearchReport, MacroContext, IndustryContext, CompanyAnalysis
-import json
+from agents.prompt_loader import load_prompt
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 class ReportSynthesizerAgent:
@@ -35,6 +39,8 @@ class ReportSynthesizerAgent:
         self.llm = llm_client or get_llm_client()
         self.role = "Report Synthesizer"
         self.goal = "Synthesize multi-agent analysis into professional reports"
+        self.prompt = load_prompt("report/research_report.md", self.SYSTEM_PROMPT)
+        self.system_prompt = self.prompt.content
 
     def synthesize(
         self,
@@ -101,7 +107,7 @@ class ReportSynthesizerAgent:
         try:
             response = self.llm.chat(
                 messages=[{"role": "user", "content": user_prompt}],
-                system_prompt=self.SYSTEM_PROMPT
+                system_prompt=self.system_prompt
             )
 
             recommendation, target_price = self._extract_partial_recommendation(
@@ -129,7 +135,7 @@ class ReportSynthesizerAgent:
             )
 
         except Exception as e:
-            print(f"AI synthesis failed, using fallback: {e}")
+            logger.warning("Report synthesis failed, using fallback: %s", e)
             return self._fallback_partial_synthesize(
                 query,
                 macro_context,

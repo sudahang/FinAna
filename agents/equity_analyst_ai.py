@@ -13,6 +13,11 @@ from skills.stock_info.stock_info import (
 )
 from config import get_company_mapping_config, get_finance_config
 from datetime import datetime
+from agents.prompt_loader import load_prompt
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 class EquityAnalystAgent:
@@ -47,6 +52,8 @@ class EquityAnalystAgent:
         self.stock_fetcher = None  # Use functional API
         self.role = "Equity Analyst"
         self.goal = "Analyze individual companies using real data and AI"
+        self.prompt = load_prompt("agents/equity.md", self.SYSTEM_PROMPT)
+        self.system_prompt = self.prompt.content
 
     def _get_symbol_format(self, symbol: str) -> str:
         """
@@ -111,14 +118,14 @@ class EquityAnalystAgent:
         try:
             news_data = get_stock_news(std_symbol, limit=5)
         except Exception as e:
-            print(f"  ⚠️  新闻获取失败：{e}")
+            logger.warning("Stock news fetch failed for %s: %s", std_symbol, e)
             news_data = []
 
         # Fetch K-line history for technical analysis
         try:
             history_data = get_stock_history(std_symbol, period="d")
         except Exception as e:
-            print(f"  ⚠️  历史数据获取失败：{e}")
+            logger.warning("Stock history fetch failed for %s: %s", std_symbol, e)
             history_data = []
 
         # Build company data object
@@ -131,7 +138,7 @@ class EquityAnalystAgent:
         try:
             response = self.llm.chat(
                 messages=[{"role": "user", "content": user_prompt}],
-                system_prompt=self.SYSTEM_PROMPT
+                system_prompt=self.system_prompt
             )
             response = repair_json_response(
                 self.llm,
@@ -143,7 +150,7 @@ class EquityAnalystAgent:
             return self._parse_ai_response(response, company_data, news_data)
 
         except Exception as e:
-            print(f"AI analysis failed, using fallback: {e}")
+            logger.warning("Equity AI analysis failed, using fallback: %s", e)
             return self._fallback_analysis(company_data, news_data)
 
     def _build_company_data(
@@ -194,7 +201,7 @@ class EquityAnalystAgent:
 }}"""
 
         try:
-            print(f"  📡 正在通过 LLM 查询 {symbol} 实时数据...")
+            logger.info("Querying company fallback data via LLM for %s", symbol)
             response = self.llm.chat(
                 messages=[{"role": "user", "content": price_prompt}],
                 system_prompt="你是一位专业的金融数据助手，提供准确的实时股票信息。请使用联网搜索获取最新数据。"
@@ -204,7 +211,7 @@ class EquityAnalystAgent:
                 response,
                 '{"name": "string", "current_price": 0.0, "sector": "string", "pe_ratio": 0.0, "market_cap": 0.0}',
             )
-            print(f"  ✅ LLM 返回数据")
+            logger.info("LLM returned fallback company data for %s", symbol)
 
             parsed = extract_json_object(response)
             if parsed:
@@ -225,7 +232,7 @@ class EquityAnalystAgent:
                 )
 
         except Exception as e:
-            print(f"  ❌ LLM 查询失败：{e}")
+            logger.warning("LLM fallback company lookup failed for %s: %s", symbol, e)
 
         # Ultimate fallback - use symbol as name with generic data
         metadata = self._get_market_metadata(symbol)
@@ -413,26 +420,6 @@ class EquityAnalystAgent:
             f"具备较强的竞争力和抗风险能力。当前股价{company.current_price:.2f}{company.currency}，"
             f"建议投资者结合自身风险承受能力，采取分散投资策略。"
         )
-
-    def analyze_with_context(
-        self,
-        query: str,
-        macro_context=None,
-        industry_context=None
-    ) -> CompanyAnalysis:
-        """
-        Perform company analysis with context.
-
-        Args:
-            query: User's investment research query.
-            macro_context: Macroeconomic context.
-            industry_context: Industry context.
-
-        Returns:
-            CompanyAnalysis containing detailed assessment.
-        """
-        symbol = self._extract_symbol(query)
-        return self.analyze(symbol)
 
     def _extract_symbol(self, query: str) -> str:
         """

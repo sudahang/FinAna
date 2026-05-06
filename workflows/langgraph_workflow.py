@@ -8,10 +8,14 @@ from agents.industry_analyst_ai import IndustryAnalystAgent
 from agents.equity_analyst_ai import EquityAnalystAgent
 from agents.report_synthesizer_ai import ReportSynthesizerAgent
 from agents.input_router_ai import InputRouterAgent, get_router_agent
+from agents.contracts import AgentResult
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from memory.conversation_memory import ConversationMemory, get_conversation_memory, format_history_for_llm
+from memory.stores import InstrumentMemoryStore, ResearchMemoryLayer, SessionMemoryStore
 from storage.report_cache import ReportCacheService, get_report_cache_service
+from workflows.agent_scheduler import AgentScheduler
+from workflows.hooks import AnalysisLifecycleHooks
 from logging_config import get_trace_id, set_trace_id
 import logging
 
@@ -33,6 +37,7 @@ class WorkflowState(TypedDict):
     macro_context: MacroContext | None
     industry_context: IndustryContext | None
     company_analysis: CompanyAnalysis | None
+    agent_results: list[AgentResult]
     report: ResearchReport | None
     error: str | None
     messages: Annotated[list[str], add_messages]
@@ -74,6 +79,12 @@ class AIResearchWorkflow:
         self.industry_analyst = IndustryAnalystAgent()
         self.equity_analyst = EquityAnalystAgent()
         self.report_synthesizer = ReportSynthesizerAgent()
+        self.agent_scheduler = AgentScheduler(
+            self.macro_analyst,
+            self.industry_analyst,
+            self.equity_analyst,
+        )
+        self.hooks = AnalysisLifecycleHooks()
 
         # Conversation memory for multi-turn chat
         self.memory = conversation_memory or get_conversation_memory()
@@ -82,6 +93,10 @@ class AIResearchWorkflow:
         self.report_cache = report_cache or get_report_cache_service() if enable_cache else None
         self.enable_cache = enable_cache
         self.last_from_cache = False
+        self.memory_layer = ResearchMemoryLayer(
+            session_store=SessionMemoryStore(self.memory),
+            instrument_store=InstrumentMemoryStore(self.report_cache),
+        )
 
         # Build the LangGraph workflow
         self.graph = self._build_graph()
@@ -97,6 +112,7 @@ class AIResearchWorkflow:
         builder.add_node("industry_analysis", self._run_industry_analysis)
         builder.add_node("equity_analysis", self._run_equity_analysis)
         builder.add_node("synthesize_report", self._run_report_synthesis)
+        builder.add_node("compliance_check", self._run_compliance_check)
 
         # Conditional routing based on query_type
         builder.add_conditional_edges(
@@ -133,8 +149,8 @@ class AIResearchWorkflow:
             }
         )
 
-        # Final node ends the workflow
-        builder.add_edge("synthesize_report", END)
+        builder.add_edge("synthesize_report", "compliance_check")
+        builder.add_edge("compliance_check", END)
 
         # Set entry point
         builder.set_entry_point("detect_params")
@@ -159,6 +175,8 @@ class AIResearchWorkflow:
                 "query_type",
                 "last_recommendation",
                 "last_target_price",
+                "user_preferences",
+                "instrument_memory",
             ]
             retained = {
                 key: session_context.get(key)
@@ -300,90 +318,6 @@ class AIResearchWorkflow:
         """Route after equity analysis."""
         return "synthesize_report"
 
-    def _detect_symbol(self, query: str, query_upper: str) -> str:
-        """Detect stock symbol from query."""
-        # 首先检查是否包含 A 股 6 位代码
-        import re
-        cn_stock_pattern = re.findall(r'\b([06]\d{5})\b', query_upper)
-        if cn_stock_pattern:
-            code = cn_stock_pattern[0]
-            # 添加市场前缀
-            if code.startswith(('6', '9')):
-                return f"sh{code}"
-            elif code.startswith(('0', '3')):
-                return f"sz{code}"
-
-        # 检查港股 5 位代码
-        hk_pattern = re.findall(r'\b(HK\d{5}|\d{5})\b', query_upper)
-        if hk_pattern:
-            code = hk_pattern[0]
-            if code.startswith('HK'):
-                return code.upper()
-            return f"HK{code}"
-
-        # Common mappings (including Chinese names) - 包含 A 股和港股
-        mappings = {
-            # 美股
-            "特斯拉": "TSLA", "TSLA": "TSLA",
-            "英伟达": "NVDA", "NVIDIA": "NVDA", "NVDA": "NVDA",
-            "苹果": "AAPL", "APPLE": "AAPL", "AAPL": "AAPL",
-            "微软": "MSFT", "MICROSOFT": "MSFT", "MSFT": "MSFT",
-            "谷歌": "GOOGL", "GOOGLE": "GOOGL", "GOOGL": "GOOGL",
-            "亚马逊": "AMZN", "AMAZON": "AMZN", "AMZN": "AMZN",
-            "META": "META", "FACEBOOK": "META",
-            # 中概股
-            "阿里巴巴": "BABA", "ALIBABA": "BABA", "BABA": "BABA", "阿里": "BABA",
-            "拼多多": "PDD", "PDD": "PDD",
-            "京东": "JD", "JD": "JD",
-            "百度": "BIDU", "BAIDU": "BIDU", "BIDU": "BIDU",
-            "网易": "NTES", "NETEASE": "NTES", "NTES": "NTES",
-            "小鹏": "XPEV", "XPENG": "XPEV", "XPEV": "XPEV",
-            "理想": "LI", "LI AUTO": "LI",
-            "蔚来": "NIO", "NIO": "NIO",
-            # A 股
-            "贵州茅台": "sh600519", "茅台": "sh600519",
-            "宁德时代": "sz300750", "宁德": "sz300750",
-            "中国平安": "sh601318", "平安": "sh601318",
-            "招商银行": "sh600036", "招行": "sh600036",
-            "五粮液": "sz000858",
-            "比亚迪": "sz002594",
-            # 港股
-            "腾讯": "HK00700", "腾讯控股": "HK00700",
-            "阿里巴巴港股": "HK09988",
-            "美团": "HK03690",
-            "小米": "HK01810", "小米集团": "HK01810"
-        }
-
-        # 使用原始查询匹配中文名称
-        for name, symbol in mappings.items():
-            if name in query:
-                return symbol
-
-        # 检查ticker pattern (3-4位大写字母)
-        tickers = re.findall(r'\b[A-Z]{3,4}\b', query_upper)
-        if tickers:
-            return tickers[0]
-
-        return "TSLA"  # Default
-
-    def _detect_sector(self, query_lower: str) -> str:
-        """Detect sector from query."""
-        sector_keywords = {
-            "科技": ["科技", "软件", "ai", "半导体", "芯片", "互联网", "nvidia", "苹果", "微软"],
-            "汽车": ["汽车", "新能源", "ev", "tesla", "特斯拉", "比亚迪", "造车"],
-            "医疗": ["医疗", "健康", "医药", "biotech", "生物科技", "器械"],
-            "金融": ["金融", "银行", "保险", "券商", "fintech"],
-            "消费": ["消费", "零售", "食品", "饮料", "家电", "服装"],
-            "能源": ["能源", "石油", "天然气", "光伏", "风电", "电池"]
-        }
-
-        for sector, keywords in sector_keywords.items():
-            for keyword in keywords:
-                if keyword in query_lower:
-                    return sector
-
-        return "科技"  # Default to technology
-
     def _run_macro_analysis(self, state: WorkflowState) -> dict:
         """Run macro economic analysis."""
         country = state.get("country", "us")
@@ -394,10 +328,16 @@ class AIResearchWorkflow:
         total_steps = {'macro_analysis': 1, 'industry_analysis': 2, 'stock_analysis': 4}.get(query_type, 4)
 
         try:
-            macro_context = self.macro_analyst.analyze(country)
+            macro_context, agent_result = self.agent_scheduler.run_macro(
+                query=state.get("query", ""),
+                country=country,
+                trace_id=trace_id,
+            )
+            agent_result = self.hooks.validate_agent_result(agent_result)
             logger.info(f"[TRACE={trace_id}] Macro analysis completed: GDP={macro_context.gdp_growth}%, Inflation={macro_context.inflation_rate}%")
             return {
                 "macro_context": macro_context,
+                "agent_results": state.get("agent_results", []) + [agent_result],
                 "messages": state.get("messages", []) + [
                     f"### 📈 步骤 1/{total_steps}: 宏观经济分析完成\n\n- **国家**: {country}\n- **GDP 增长**: {macro_context.gdp_growth}%\n- **通胀率**: {macro_context.inflation_rate}%\n- **市场情绪**: {macro_context.market_sentiment}\n- **数据来源**: {macro_context.data_source}"
                 ]
@@ -412,15 +352,20 @@ class AIResearchWorkflow:
     def _run_industry_analysis(self, state: WorkflowState) -> dict:
         """Run industry analysis."""
         sector = state.get("sector", "科技")
-        query = state.get("query", "")
         trace_id = get_trace_id()
         logger.info(f"[TRACE={trace_id}] Running industry analysis for sector: {sector}")
 
         try:
-            industry_context = self.industry_analyst.analyze(sector)
+            industry_context, agent_result = self.agent_scheduler.run_industry(
+                query=state.get("query", ""),
+                sector=sector,
+                trace_id=trace_id,
+            )
+            agent_result = self.hooks.validate_agent_result(agent_result)
             logger.info(f"[TRACE={trace_id}] Industry analysis completed: growth={industry_context.sector_growth}%, outlook={industry_context.outlook}")
             return {
                 "industry_context": industry_context,
+                "agent_results": state.get("agent_results", []) + [agent_result],
                 "messages": state.get("messages", []) + [
                     f"### 🏭 步骤 2/4: 行业分析完成\n\n- **行业**: {sector}\n- **行业增长**: {industry_context.sector_growth}%\n- **行业前景**: {industry_context.outlook}\n- **数据来源**: {industry_context.data_source}"
                 ]
@@ -440,13 +385,18 @@ class AIResearchWorkflow:
         logger.info(f"[TRACE={trace_id}] Running equity analysis for symbol: {symbol}")
 
         try:
-            company_analysis = self.equity_analyst.analyze(symbol)
+            company_analysis, agent_result = self.agent_scheduler.run_equity(
+                query=state.get("query", ""),
+                symbol=symbol,
+                trace_id=trace_id,
+            )
+            agent_result = self.hooks.validate_agent_result(agent_result)
             price_text = self._format_price(company_analysis.company.current_price, market_metadata)
             logger.info(f"[TRACE={trace_id}] Equity analysis completed: company={company_analysis.company.name}, current_price={price_text}")
             return {
                 "company_analysis": company_analysis,
+                "agent_results": state.get("agent_results", []) + [agent_result],
                 "messages": state.get("messages", []) + [
-                    f"### 🏢 步骤 3/4: 公司分析完成\n\n- **公司**: {company_analysis.company.name}\n- **股票代码**: {symbol}\n- **当前股价**: {price_text}\n- **技术信号**: {company_analysis.technical_indicator}"
                     f"### 🏢 步骤 3/4: 公司分析完成\n\n- **公司**: {company_analysis.company.name}\n- **股票代码**: {symbol}\n- **当前股价**: {price_text}\n- **技术信号**: {company_analysis.technical_indicator}\n- **数据来源**: {company_analysis.company.data_source}"
                 ]
             }
@@ -523,11 +473,29 @@ class AIResearchWorkflow:
                 "messages": state.get("messages", []) + [f"❌ 报告合成失败：{str(e)}"]
             }
 
+    def _run_compliance_check(self, state: WorkflowState) -> dict:
+        """Run deterministic report provenance and compliance checks."""
+        report = state.get("report")
+        if not report:
+            return {}
+
+        trace_id = get_trace_id()
+        agent_results = state.get("agent_results", [])
+        checked_report = self.hooks.validate_report_provenance(report, agent_results)
+        self.hooks.emit_audit_log(
+            "report_compliance_checked",
+            trace_id=trace_id,
+            sources=len(checked_report.data_sources or []),
+            fallback_agents=sum(1 for result in agent_results if result.is_fallback),
+        )
+        return {"report": checked_report}
+
     def execute(
         self,
         query: str,
         session_id: str = None,
-        conversation_history: list[dict] = None
+        conversation_history: list[dict] = None,
+        user_id: str = None,
     ) -> ResearchReport:
         """
         Execute the full AI research workflow using LangGraph.
@@ -544,6 +512,7 @@ class AIResearchWorkflow:
         import uuid
         trace_id = str(uuid.uuid4())[:8]
         self.last_from_cache = False
+        self.hooks.validate_input(query)
 
         # Set trace ID in context for propagation to storage layer
         set_trace_id(trace_id)
@@ -575,14 +544,28 @@ class AIResearchWorkflow:
             else:
                 logger.info(f"[TRACE={trace_id}] CACHE MISS: No similar report found, will generate new one")
 
-        session_context = {}
+        session_context = self.memory.get_context(session_id) if session_id else {}
         prior_history = conversation_history or []
-        if session_id:
-            session_context = self.memory.get_context(session_id)
-            if conversation_history is None:
-                prior_history = self.memory.get_history(session_id)
+        if session_id and conversation_history is None:
+            prior_history = self.memory.get_history(session_id)
 
-        conversation_context = self._build_conversation_context(prior_history, session_context)
+        memory_snapshot = self.memory_layer.snapshot(
+            session_id=session_id,
+            history=prior_history,
+            user_id=user_id,
+            symbol=session_context.get("symbol"),
+            query=query,
+        )
+        session_context = memory_snapshot.session_context
+        conversation_context = self._build_conversation_context(
+            [{"role": "system", "content": memory_snapshot.conversation_summary}]
+            if memory_snapshot.conversation_summary else [],
+            {
+                **session_context,
+                "user_preferences": memory_snapshot.user_preferences,
+                "instrument_memory": memory_snapshot.instrument_memory,
+            },
+        )
 
         # Get or create session if session_id provided
         if session_id:
@@ -606,6 +589,7 @@ class AIResearchWorkflow:
             "macro_context": None,
             "industry_context": None,
             "company_analysis": None,
+            "agent_results": [],
             "report": None,
             "error": None,
             "messages": []

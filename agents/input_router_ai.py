@@ -4,8 +4,14 @@ from typing import TypedDict, Optional
 from data.schemas import ResearchReport
 from llm.client import LLMClient, get_llm_client
 from skills.web_search.web_search import WebSearcher, get_web_searcher
-import json
+from agents.prompt_loader import load_prompt
+from agents.structured_output import extract_json_object
+from config import get_company_mapping_config
+import logging
 import re
+
+
+logger = logging.getLogger(__name__)
 
 
 class DetectedParams(TypedDict, total=False):
@@ -78,8 +84,11 @@ class InputRouterAgent:
         """
         self.llm = llm_client or get_llm_client()
         self.web_searcher = get_web_searcher()
+        self.mapping_config = get_company_mapping_config()
         self.role = "Input Router"
         self.goal = "Parse user queries using web search"
+        self.prompt = load_prompt("agents/input_router.md", self.SYSTEM_PROMPT)
+        self.system_prompt = self.prompt.content
 
     def parse_query(self, query: str) -> DetectedParams:
         """
@@ -156,6 +165,10 @@ class InputRouterAgent:
             if ticker not in excluded:
                 return ticker
 
+        for name, mapped_symbol in self.mapping_config.mappings.items():
+            if name in query or name in query.upper():
+                return mapped_symbol
+
         return ''
 
     def _detect_country(self, query: str) -> str:
@@ -182,7 +195,7 @@ class InputRouterAgent:
         query_lower = query.lower()
         sector_scores = {}
 
-        for sector, keywords in self.SECTOR_KEYWORDS.items():
+        for sector, keywords in self.mapping_config.sector_keywords.items():
             score = sum(1 for kw in keywords if kw in query_lower)
             if score > 0:
                 sector_scores[sector] = score
@@ -241,15 +254,11 @@ class InputRouterAgent:
 
             response = self.llm.chat(
                 messages=[{"role": "user", "content": user_prompt}],
-                system_prompt=self.SYSTEM_PROMPT
+                system_prompt=self.system_prompt
             )
 
-            # Parse JSON from response
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
-            if start_idx >= 0 and end_idx > start_idx:
-                json_str = response[start_idx:end_idx]
-                parsed = json.loads(json_str)
+            parsed = extract_json_object(response)
+            if parsed:
                 return DetectedParams(
                     country=parsed.get('country', 'us'),
                     sector=parsed.get('sector', ''),
@@ -259,7 +268,7 @@ class InputRouterAgent:
                     reasoning=parsed.get('reasoning', '')
                 )
         except Exception as e:
-            print(f"LLM parsing failed: {e}, using rule-based parsing")
+            logger.warning("LLM query parsing failed, using rule-based parsing: %s", e)
 
         return self.parse_query(query)
 

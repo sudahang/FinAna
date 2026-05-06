@@ -52,6 +52,7 @@ class LLMClient:
 
             config = DashScopeConfig(
                 api_key=api_key,
+                base_url=llm_config.base_url,
                 model=llm_config.model,
                 max_tokens=llm_config.max_tokens,
                 temperature=llm_config.temperature,

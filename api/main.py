@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from api.routers.analysis import router as analysis_router
 from api.routers.users import router as users_router
 from users.scheduler import start_scheduler, stop_scheduler
+from users.config import config as users_config
 
 from config import get_api_config
 
@@ -24,10 +25,14 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("FinAna API starting...")
-    start_scheduler()
+    if users_config.enable_scheduler:
+        start_scheduler()
+    else:
+        logger.info("Scheduler disabled; set ENABLE_SCHEDULER=true to start background email jobs")
     yield
     logger.info("FinAna API shutting down...")
-    stop_scheduler()
+    if users_config.enable_scheduler:
+        stop_scheduler()
 
 
 app = FastAPI(

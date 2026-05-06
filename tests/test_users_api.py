@@ -300,13 +300,15 @@ class TestSchedulerServiceUnit:
     """Unit tests for scheduler service logic."""
 
     @patch('users.scheduler.BackgroundScheduler')
-    def test_scheduler_add_jobs(self, mock_scheduler_class):
-        from users.scheduler import SchedulerService
+    def test_scheduler_add_jobs(self, mock_scheduler_class, monkeypatch):
+        from users import scheduler as scheduler_module
 
         mock_scheduler = Mock()
+        mock_scheduler.running = True
         mock_scheduler_class.return_value = mock_scheduler
+        monkeypatch.setattr(scheduler_module.config, "enable_scheduler", True)
 
-        scheduler = SchedulerService()
+        scheduler = scheduler_module.SchedulerService()
         scheduler.start()
 
         assert mock_scheduler.add_job.call_count == 2
@@ -314,6 +316,21 @@ class TestSchedulerServiceUnit:
 
         scheduler.stop()
         mock_scheduler.shutdown.assert_called_once()
+
+    @patch('users.scheduler.BackgroundScheduler')
+    def test_scheduler_noops_when_disabled(self, mock_scheduler_class, monkeypatch):
+        from users import scheduler as scheduler_module
+
+        mock_scheduler = Mock()
+        mock_scheduler_class.return_value = mock_scheduler
+        monkeypatch.setattr(scheduler_module.config, "enable_scheduler", False)
+
+        scheduler = scheduler_module.SchedulerService()
+        scheduler.start()
+
+        assert scheduler.running is False
+        mock_scheduler.add_job.assert_not_called()
+        mock_scheduler.start.assert_not_called()
 
     @patch('users.scheduler.BackgroundScheduler')
     def test_scheduler_get_jobs(self, mock_scheduler_class):

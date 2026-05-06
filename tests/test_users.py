@@ -523,11 +523,15 @@ class TestSchedulerService:
         assert scheduler.running is False
 
     @patch('users.scheduler.BackgroundScheduler')
-    def test_scheduler_start_stop(self, mock_scheduler_class):
+    def test_scheduler_start_stop(self, mock_scheduler_class, monkeypatch):
         mock_scheduler = Mock()
+        mock_scheduler.running = True
         mock_scheduler_class.return_value = mock_scheduler
 
-        from users.scheduler import SchedulerService
+        from users import scheduler as scheduler_module
+
+        monkeypatch.setattr(scheduler_module.config, "enable_scheduler", True)
+        SchedulerService = scheduler_module.SchedulerService
 
         scheduler = SchedulerService()
         scheduler.start()
@@ -539,6 +543,20 @@ class TestSchedulerService:
         scheduler.stop()
         assert scheduler.running is False
         mock_scheduler.shutdown.assert_called_once()
+
+    @patch('users.scheduler.BackgroundScheduler')
+    def test_scheduler_disabled_by_default(self, mock_scheduler_class, monkeypatch):
+        from users import scheduler as scheduler_module
+
+        monkeypatch.setattr(scheduler_module.config, "enable_scheduler", False)
+        mock_scheduler = Mock()
+        mock_scheduler_class.return_value = mock_scheduler
+
+        scheduler = scheduler_module.SchedulerService()
+        scheduler.start()
+
+        assert scheduler.running is False
+        mock_scheduler.start.assert_not_called()
 
 
 class TestNotificationTime:

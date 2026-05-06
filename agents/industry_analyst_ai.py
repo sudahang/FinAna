@@ -4,7 +4,12 @@ from llm.client import LLMClient, get_llm_client
 from data.finance_data import FinancialDataFetcher, get_data_fetcher
 from data.schemas import IndustryContext
 from agents.structured_output import extract_json_object, normalize_choice, normalize_string_list, repair_json_response
+from agents.prompt_loader import load_prompt
 from config import get_company_mapping_config
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 class IndustryAnalystAgent:
@@ -36,6 +41,8 @@ class IndustryAnalystAgent:
         self.data_fetcher = get_data_fetcher()
         self.role = "Industry Analyst"
         self.goal = "Analyze industry sectors using real data and AI"
+        self.prompt = load_prompt("agents/industry.md", self.SYSTEM_PROMPT)
+        self.system_prompt = self.prompt.content
 
     def analyze(self, sector: str = "科技") -> IndustryContext:
         """
@@ -57,7 +64,7 @@ class IndustryAnalystAgent:
         try:
             response = self.llm.chat(
                 messages=[{"role": "user", "content": user_prompt}],
-                system_prompt=self.SYSTEM_PROMPT
+                system_prompt=self.system_prompt
             )
             response = repair_json_response(
                 self.llm,
@@ -69,7 +76,7 @@ class IndustryAnalystAgent:
             return self._parse_ai_response(response, sector, industry_data)
 
         except Exception as e:
-            print(f"AI analysis failed, using fallback: {e}")
+            logger.warning("Industry AI analysis failed, using fallback: %s", e)
             return self._fallback_analysis(sector, industry_data)
 
     def _build_analysis_prompt(self, sector: str, industry_data: dict) -> str:

@@ -1,6 +1,8 @@
 """Focused contract tests for the production workflow path."""
 
 from api.routers import analysis
+from agents.contracts import AgentResult, AgentRunMetadata, AgentTask, Evidence
+from agents.prompt_loader import load_prompt
 from agents.structured_output import (
     extract_json_object,
     normalize_choice,
@@ -11,9 +13,11 @@ from agents.report_synthesizer_ai import ReportSynthesizerAgent
 from data.schemas import CompanyAnalysis, CompanyData, MacroContext, ResearchReport
 from fastapi.testclient import TestClient
 from api.main import app
+from memory.stores import compact_conversation_history
 from storage.redis_client import RedisClient
 from workflows import AIResearchWorkflow
 from workflows.langgraph_workflow import AIResearchWorkflow as LangGraphWorkflow
+from workflows.hooks import AnalysisLifecycleHooks
 
 
 def test_workflows_default_export_is_langgraph():
@@ -46,6 +50,21 @@ def test_industry_analysis_uses_resolved_sector():
     fake = FakeIndustryAnalyst()
     workflow.industry_analyst = fake
 
+    class FakeScheduler:
+        def run_industry(self, query, sector, trace_id=None):
+            context = fake.analyze(sector)
+            result = AgentResult(
+                task_id="task-1",
+                role="industry_analyst",
+                payload=context.model_dump(),
+                evidence=[Evidence(source="test-source", content=context.summary)],
+                metadata=AgentRunMetadata(agent_role="industry_analyst"),
+            )
+            return context, result
+
+    workflow.agent_scheduler = FakeScheduler()
+    workflow.hooks = AnalysisLifecycleHooks()
+
     result = workflow._run_industry_analysis(
         {
             "query": "它的行业怎么看",
@@ -56,6 +75,45 @@ def test_industry_analysis_uses_resolved_sector():
 
     assert fake.sector == "汽车"
     assert result["industry_context"].sector_name == "汽车"
+    assert result["agent_results"][0].role == "industry_analyst"
+
+
+def test_agent_contracts_validate_evidence_and_metadata():
+    """Agent boundary contracts should enforce role, confidence, and evidence shape."""
+    task = AgentTask(role="macro_analyst", query="Analyze macro", country="us")
+    evidence = Evidence(source="macro-source", content="GDP and inflation summary")
+    result = AgentResult(
+        task_id=task.id,
+        role=task.role,
+        payload={"market_sentiment": "neutral"},
+        confidence=0.75,
+        evidence=[evidence],
+        metadata=AgentRunMetadata(agent_role=task.role, prompt_version="agents.macro@v1"),
+    )
+
+    assert result.task_id == task.id
+    assert result.confidence == 0.75
+    assert result.evidence[0].source == "macro-source"
+    assert result.metadata.prompt_version == "agents.macro@v1"
+
+
+def test_prompt_loader_reads_versioned_prompt():
+    """Prompt loader should expose role prompt metadata for reports and evals."""
+    prompt = load_prompt("agents/macro.md")
+
+    assert prompt.version == "v1"
+    assert prompt.identifier == "agents.macro@v1"
+    assert "宏观经济分析师" in prompt.content
+
+
+def test_memory_compaction_bounds_large_history():
+    """Conversation memory should be compacted before prompt injection."""
+    history = [{"role": "assistant", "content": "x" * 1200} for _ in range(5)]
+
+    compacted = compact_conversation_history(history, max_messages=5, max_chars=1000)
+
+    assert "[对话历史压缩]" in compacted
+    assert len(compacted) < 1200
 
 
 def test_report_synthesizer_includes_context_and_market_metadata():

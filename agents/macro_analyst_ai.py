@@ -5,6 +5,11 @@ from data.finance_data import FinancialDataFetcher, get_data_fetcher
 from data.schemas import MacroContext
 from skills.stock_info.stock_info import get_macro_data
 from agents.structured_output import extract_json_object, normalize_choice, repair_json_response
+from agents.prompt_loader import load_prompt
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 class MacroAnalystAgent:
@@ -37,6 +42,8 @@ class MacroAnalystAgent:
         self.data_fetcher = get_data_fetcher()
         self.role = "Macro Economy Analyst"
         self.goal = "Analyze macroeconomic conditions using real data and AI"
+        self.prompt = load_prompt("agents/macro.md", self.SYSTEM_PROMPT)
+        self.system_prompt = self.prompt.content
 
     def analyze(self, country: str = "china") -> MacroContext:
         """
@@ -52,7 +59,7 @@ class MacroAnalystAgent:
         try:
             macro_data = get_macro_data(country)
         except Exception as e:
-            print(f"Macro data fetch failed, using fallback: {e}")
+            logger.warning("Macro data fetch failed, using fallback: %s", e)
             macro_data = self.data_fetcher.get_macro_data(country)
 
         # Build prompt for AI analysis
@@ -62,7 +69,7 @@ class MacroAnalystAgent:
         try:
             response = self.llm.chat(
                 messages=[{"role": "user", "content": user_prompt}],
-                system_prompt=self.SYSTEM_PROMPT
+                system_prompt=self.system_prompt
             )
             response = repair_json_response(
                 self.llm,
@@ -74,7 +81,7 @@ class MacroAnalystAgent:
             return self._parse_ai_response(response, macro_data)
 
         except Exception as e:
-            print(f"AI analysis failed, using fallback: {e}")
+            logger.warning("Macro AI analysis failed, using fallback: %s", e)
             return self._fallback_analysis(macro_data)
 
     def _build_analysis_prompt(self, macro_data: dict, country: str) -> str:

@@ -20,10 +20,22 @@ class SchedulerService:
 
     def __init__(self):
         """Initialize scheduler service."""
-        self.scheduler = BackgroundScheduler()
+        self.scheduler = BackgroundScheduler(
+            timezone=config.scheduler_timezone,
+            job_defaults={
+                "coalesce": True,
+                "max_instances": config.scheduler_max_instances,
+                "misfire_grace_time": config.scheduler_misfire_grace_seconds,
+            },
+        )
         self.running = False
-        self.morning_hour = int(config.notification_time_morning.split(":")[0])
-        self.evening_hour = int(config.notification_time_evening.split(":")[0])
+        self.morning_hour, self.morning_minute = self._parse_time(config.notification_time_morning)
+        self.evening_hour, self.evening_minute = self._parse_time(config.notification_time_evening)
+
+    def _parse_time(self, value: str) -> tuple[int, int]:
+        """Parse HH:MM scheduler config."""
+        hour, minute = value.split(":", maxsplit=1)
+        return int(hour), int(minute)
 
     def start(self):
         """Start the scheduler."""
@@ -31,11 +43,15 @@ class SchedulerService:
             logger.warning("Scheduler already running")
             return
 
+        if not config.enable_scheduler:
+            logger.info("Scheduler disabled by ENABLE_SCHEDULER=false")
+            return
+
         logger.info("Starting scheduler service")
 
         self.scheduler.add_job(
             self._send_morning_reports,
-            CronTrigger(hour=self.morning_hour, minute=0),
+            CronTrigger(hour=self.morning_hour, minute=self.morning_minute),
             id="morning_reports",
             name=f"Morning Reports ({config.notification_time_morning})",
             replace_existing=True
@@ -43,7 +59,7 @@ class SchedulerService:
 
         self.scheduler.add_job(
             self._send_evening_reports,
-            CronTrigger(hour=self.evening_hour, minute=0),
+            CronTrigger(hour=self.evening_hour, minute=self.evening_minute),
             id="evening_reports",
             name=f"Evening Reports ({config.notification_time_evening})",
             replace_existing=True
@@ -60,7 +76,8 @@ class SchedulerService:
             return
 
         logger.info("Stopping scheduler service")
-        self.scheduler.shutdown(wait=True)
+        if self.scheduler.running:
+            self.scheduler.shutdown(wait=True)
         self.running = False
         logger.info("Scheduler stopped")
 
