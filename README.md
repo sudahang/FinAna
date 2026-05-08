@@ -503,7 +503,7 @@ FinAna/
 ├── web_ui/                     # Web 界面模块
 │   └── app.py                  # Gradio 应用
 ├── skills/                     # 技能模块
-│   └── stock_info/             # 股票信息查询
+│   └── stock_data_enhanced/    # 股票数据增强（多数据源）
 ├── tests/                      # 单元测试模块
 ├── test_*.py                   # 各种测试脚本
 ├── docs/                       # 文档目录

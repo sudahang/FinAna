@@ -1,6 +1,7 @@
-"""Test AI Agent functionality."""
+"""Test AI Agent functionality (integration tests - require network)."""
 
 import sys
+import pytest
 sys.path.insert(0, '.')
 
 # Load environment variables first
@@ -16,6 +17,8 @@ from agents.report_synthesizer_ai import ReportSynthesizerAgent
 from workflows.langgraph_workflow import AIResearchWorkflow
 
 
+@pytest.mark.external_api
+@pytest.mark.integration
 def test_llm_client():
     """Test LLM client connection."""
     print("\n=== 测试 LLM 客户端 ===")
@@ -31,18 +34,20 @@ def test_llm_client():
         return False
 
 
+@pytest.mark.external_api
+@pytest.mark.integration
 def test_data_fetcher():
     """Test financial data fetcher."""
     print("\n=== 测试财经数据获取 ===")
     fetcher = get_data_fetcher()
 
-    # Test US stock quote
-    print("\n测试美股行情 (TSLA)...")
-    quote = fetcher.get_us_stock_quote("TSLA")
+    # Test A-share quote
+    print("\n测试A股行情 (贵州茅台)...")
+    quote = fetcher.get_stock_quote("sh600519")
     if quote:
-        print(f"✅ TSLA 价格：${quote.get('current_price', 'N/A')}")
+        print(f"✅ 贵州茅台 价格：¥{quote.get('current_price', 'N/A')}")
     else:
-        print("⚠️  TSLA 行情获取失败（可能 API 限流）")
+        print("⚠️  贵州茅台行情获取失败")
 
     # Test macro data
     print("\n测试宏观数据...")
@@ -63,6 +68,8 @@ def test_data_fetcher():
     return True
 
 
+@pytest.mark.external_api
+@pytest.mark.integration
 def test_macro_agent():
     """Test Macro Analyst AI Agent."""
     print("\n=== 测试宏观经济分析师 AI ===")
@@ -77,6 +84,8 @@ def test_macro_agent():
         return False
 
 
+@pytest.mark.external_api
+@pytest.mark.integration
 def test_industry_agent():
     """Test Industry Analyst AI Agent."""
     print("\n=== 测试行业分析师 AI ===")
@@ -91,12 +100,14 @@ def test_industry_agent():
         return False
 
 
+@pytest.mark.external_api
+@pytest.mark.integration
 def test_equity_agent():
     """Test Equity Analyst AI Agent."""
     print("\n=== 测试个股分析师 AI ===")
     try:
         agent = EquityAnalystAgent()
-        result = agent.analyze("TSLA")
+        result = agent.analyze("sh600519")
         print(f"✅ 技术信号：{result.technical_indicator}")
         print(f"📝 分析摘要：{result.summary[:100]}...")
         return True
@@ -105,17 +116,19 @@ def test_equity_agent():
         return False
 
 
+@pytest.mark.external_api
+@pytest.mark.integration
 def test_full_workflow():
     """Test full AI research workflow."""
     print("\n=== 测试完整 AI 投研工作流 ===")
     try:
         workflow = AIResearchWorkflow()
-        print("开始分析：特斯拉股票未来走势...")
-        report = workflow.execute("分析特斯拉股票的未来走势")
+        print("开始分析：贵州茅台股票未来走势...")
+        report = workflow.execute("分析贵州茅台股票的未来走势")
 
         print(f"\n✅ 报告生成成功!")
         print(f"📊 投资建议：{report.recommendation}")
-        print(f"💰 目标价格：${report.target_price}")
+        print(f"💰 目标价格：¥{report.target_price}")
         print(f"📄 报告长度：{len(report.full_report)} 字符")
         print(f"\n--- 报告预览 ---")
         print(report.full_report[:1000] + "...")

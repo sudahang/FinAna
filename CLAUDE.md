@@ -59,10 +59,10 @@ FinAna/
 ├── web_ui/                     # Web 界面
 │   └── app.py                  # Gradio 应用 (现代设计)
 ├── skills/                     # 技能模块
-│   └── stock_info/             # 上市公司信息查询 skill
-│       ├── stock_info.py       # 核心实现 (A 股/港股/美股)
-│       ├── skill.yml           # Skill 配置
-│       └── test_stock_info.py  # 测试脚本
+│   └── stock_data_enhanced/    # 股票数据增强 skill
+│       ├── stock_data.py       # 核心实现 (A 股/港股/美股)
+│       ├── SKILL.md            # Skill 配置
+│       └── test_stock_data.py  # 测试脚本
 ├── tests/                      # 单元测试
 ├── test_ai_agent.py            # AI Agent 集成测试
 └── requirements.txt            # 依赖
@@ -117,32 +117,29 @@ python test_ai_agent.py
 # - 个股分析师 AI
 # - 完整工作流
 
-# Stock Info Skill 测试
-python skills/stock_info/test_stock_info.py
+# Stock Data Enhanced Skill 测试
+python skills/stock_data_enhanced/test_stock_data.py
 ```
 
-## Stock Info Skill
+## Stock Data Enhanced Skill
 
-查询上市公司信息的技能，支持 A 股、港股、美股。
+查询上市公司信息的增强版技能，支持 A 股、港股、美股，使用多数据源 fallback。
 
 ### 数据源
-- **新浪财经**: 实时行情、新闻
-- **东方财富**: 行情、财务数据、新闻
-- **巨潮资讯网**: 法定信息披露 (A 股/港股)
+- **A 股**: 新浪财经 HTTP (快速，单只股票) → 腾讯财经 HTTP (备用)
+- **港股**: 新浪财经 HTTP (快速，单只股票) → 腾讯财经 HTTP (备用)
+- **美股**: yfinance (Yahoo Finance) → Finnhub (60次/分钟) → Alpha Vantage (25次/天)
+- **历史数据**: AKShare (快速稳定)
 
 ### 使用示例
 
 ```python
-from skills.stock_info.stock_info import (
-    search_stock_info,      # 搜索股票
+from skills.stock_data_enhanced.stock_data import (
     get_stock_quote,        # 获取实时行情
     get_company_info,       # 获取公司信息
-    get_stock_history,      # 获取历史 K 线
+    get_history,            # 获取历史 K 线
     get_stock_news          # 获取股票新闻
 )
-
-# 搜索股票
-results = search_stock_info("贵州茅台")
 
 # 获取行情 (A 股需要市场前缀)
 quote = get_stock_quote("sh600519")  # 贵州茅台

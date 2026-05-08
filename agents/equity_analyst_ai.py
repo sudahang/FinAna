@@ -1,15 +1,13 @@
 """AI-powered Equity Analyst Agent using Qwen LLM."""
 
 from llm.client import LLMClient, get_llm_client
-from data.finance_data import FinancialDataFetcher, get_data_fetcher
 from data.schemas import CompanyAnalysis, CompanyData, NewsItem
 from agents.structured_output import extract_json_object, normalize_choice, normalize_string_list, repair_json_response
-from skills.stock_info.stock_info import (
+from skills.stock_data_enhanced.stock_data import (
     get_stock_quote,
     get_company_info,
     get_stock_news,
-    get_stock_history,
-    search_stock_info
+    get_history
 )
 from config import get_company_mapping_config, get_finance_config
 from datetime import datetime
@@ -48,7 +46,6 @@ class EquityAnalystAgent:
             llm_client: Optional LLM client. If None, uses default.
         """
         self.llm = llm_client or get_llm_client()
-        self.data_fetcher = get_data_fetcher()
         self.stock_fetcher = None  # Use functional API
         self.role = "Equity Analyst"
         self.goal = "Analyze individual companies using real data and AI"
@@ -123,7 +120,7 @@ class EquityAnalystAgent:
 
         # Fetch K-line history for technical analysis
         try:
-            history_data = get_stock_history(std_symbol, period="d")
+            history_data = get_history(std_symbol, period="d")
         except Exception as e:
             logger.warning("Stock history fetch failed for %s: %s", std_symbol, e)
             history_data = []

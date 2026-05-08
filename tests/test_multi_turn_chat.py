@@ -44,7 +44,7 @@ def test_conversation_memory():
         print(f"  [{msg['role']}]: {msg['content'][:50]}...")
 
     # Test context storage
-    memory.set_context(session_id, "symbol", "TSLA")
+    memory.set_context(session_id, "symbol", "sh600519")
     memory.set_context(session_id, "country", "us")
     memory.set_context(session_id, "sector", "汽车")
 

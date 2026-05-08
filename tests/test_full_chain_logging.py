@@ -135,8 +135,8 @@ def test_redis_operations() -> tuple[bool, str]:
         test_summary = f"Test summary for trace {trace_id}"
         test_metadata = {
             "query": "测试查询",
-            "symbol": "TSLA",
-            "country": "us",
+            "symbol": "sh600519",
+            "country": "china",
             "test_trace": trace_id
         }
 
@@ -306,9 +306,9 @@ def test_report_cache_service() -> tuple[bool, str]:
         report_id, success = cache_service.cache_report(
             report=report,
             query="全链路测试查询",
-            symbol="TSLA",
-            country="us",
-            sector="科技"
+            symbol="sh600519",
+            country="china",
+            sector="白酒"
         )
 
         if not success:
@@ -320,7 +320,7 @@ def test_report_cache_service() -> tuple[bool, str]:
         logger.info(f"[TRACE={trace_id}] Finding cached report...")
         cached_report = cache_service.find_cached_report(
             query="全链路测试查询",
-            symbol="TSLA"
+            symbol="sh600519"
         )
 
         if not cached_report:
@@ -371,12 +371,12 @@ def test_full_chain_simulation() -> tuple[bool, str]:
 
         if cache_available:
             logger.info(f"[TRACE={trace_id}] [Cache] 缓存服务可用")
-            logger.info(f"[TRACE={trace_id}] [Cache] 查询 Redis：find_similar_reports(query='分析特斯拉股票')")
+            logger.info(f"[TRACE={trace_id}] [Cache] 查询 Redis：find_similar_reports(query='分析贵州茅台股票')")
 
             # 模拟缓存查询
             cached_report = cache_service.find_cached_report(
-                query="分析特斯拉股票",
-                symbol="TSLA"
+                query="分析贵州茅台股票",
+                symbol="sh600519"
             )
 
             if cached_report:
@@ -391,17 +391,17 @@ def test_full_chain_simulation() -> tuple[bool, str]:
 
         # Step 4: 执行分析流程
         logger.info(f"[TRACE={trace_id}] [Analysis] 开始执行分析流程")
-        logger.info(f"[TRACE={trace_id}] [Analysis] Step 1/4: 宏观经济分析 (country=us)")
-        logger.info(f"[TRACE={trace_id}] [Analysis] Step 2/4: 行业分析 (sector=汽车)")
-        logger.info(f"[TRACE={trace_id}] [Analysis] Step 3/4: 公司分析 (symbol=TSLA)")
+        logger.info(f"[TRACE={trace_id}] [Analysis] Step 1/4: 宏观经济分析 (country=china)")
+        logger.info(f"[TRACE={trace_id}] [Analysis] Step 2/4: 行业分析 (sector=白酒)")
+        logger.info(f"[TRACE={trace_id}] [Analysis] Step 3/4: 公司分析 (symbol=sh600519)")
         logger.info(f"[TRACE={trace_id}] [Analysis] Step 4/4: 报告合成")
 
         # Step 5: 缓存新报告
         if cache_available:
             logger.info(f"[TRACE={trace_id}] [Cache] 缓存新生成的报告")
-            logger.info(f"[TRACE={trace_id}] [Cache] 上传到 SeaweedFS: /reports/us/TSLA/{trace_id}.md")
+            logger.info(f"[TRACE={trace_id}] [Cache] 上传到 SeaweedFS: /reports/cn/sh600519/{trace_id}.md")
             logger.info(f"[TRACE={trace_id}] [Cache] 缓存摘要到 Redis: report:summary:{trace_id}")
-            logger.info(f"[TRACE={trace_id}] [Cache] 建立索引：symbol=TSLA, country=us")
+            logger.info(f"[TRACE={trace_id}] [Cache] 建立索引：symbol=sh600519, country=china")
 
         # Step 6: 返回响应
         logger.info(f"[TRACE={trace_id}] [API] 返回响应：200 OK")

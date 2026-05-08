@@ -52,7 +52,7 @@ class TestIndustryAnalystAgent:
 
     def test_extract_sector_uses_configured_labels(self):
         agent = IndustryAnalystAgent(llm_client=FakeLLM())
-        assert agent._extract_sector("分析 Tesla 股票") == "汽车"
+        assert agent._extract_sector("分析比亚迪股票") == "汽车"
         assert agent._extract_sector("EV market analysis") == "汽车"
         assert agent._extract_sector("医疗 sector outlook") == "医疗"
         assert agent._extract_sector("Technology stocks") == "科技"
@@ -91,22 +91,22 @@ class TestEquityAnalystAgent:
 
     def test_extract_symbol_uses_company_mapping(self):
         agent = EquityAnalystAgent(llm_client=FakeLLM())
-        assert agent._extract_symbol("Analyze NVIDIA stock") == "NVDA"
-        assert agent._extract_symbol("Apple analysis") == "AAPL"
-        assert agent._extract_symbol("Analyze MSFT stock") == "MSFT"
-        assert agent._extract_symbol("Unknown company") == "TSLA"
+        assert agent._extract_symbol("分析贵州茅台股票") == "sh600519"
+        assert agent._extract_symbol("腾讯控股分析") == "HK00700"
+        assert agent._extract_symbol("分析阿里巴巴") == "BABA"
+        assert agent._extract_symbol("Unknown company") == "sh600519"
 
     def test_parse_ai_response_normalizes_signal_and_risks(self):
         agent = EquityAnalystAgent(llm_client=FakeLLM())
         company = CompanyData(
-            symbol="TSLA",
-            name="Tesla",
-            sector="汽车",
+            symbol="sh600519",
+            name="贵州茅台",
+            sector="白酒",
             market_cap=0.0,
             pe_ratio=0.0,
-            current_price=200.0,
-            market="美股",
-            currency="USD",
+            current_price=1800.0,
+            market="A股",
+            currency="CNY",
             data_source="quote-source",
         )
 
@@ -152,32 +152,32 @@ class TestReportSynthesizerAgent:
         )
         company = CompanyAnalysis(
             company=CompanyData(
-                symbol="NVDA",
-                name="NVIDIA",
-                sector="科技",
+                symbol="sh600519",
+                name="贵州茅台",
+                sector="白酒",
                 market_cap=1750.0,
                 pe_ratio=65.8,
-                current_price=722.48,
-                market="美股",
-                currency="USD",
+                current_price=1800.0,
+                market="A股",
+                currency="CNY",
                 data_source="quote-source",
             ),
             financial_health="Strong",
             recent_news=[],
             technical_indicator="buy",
-            risks=["Risk 1"],
-            summary="Company summary",
+            risks=["估值风险"],
+            summary="公司总结",
         )
 
         report = agent._fallback_partial_synthesize(
-            "Analyze NVDA",
+            "分析贵州茅台",
             macro,
             industry,
             company,
             market_metadata={
-                "market": "美股",
-                "currency": "USD",
-                "price_prefix": "$",
+                "market": "A股",
+                "currency": "CNY",
+                "price_prefix": "¥",
                 "data_source": "market-source",
             },
         )
@@ -188,5 +188,5 @@ class TestReportSynthesizerAgent:
         assert "## 行业分析" in report.full_report
         assert "## 公司分析" in report.full_report
         assert "数据来源与局限性" in report.full_report
-        assert report.market == "美股"
+        assert report.market == "A股"
         assert "quote-source" in report.data_sources

@@ -57,11 +57,11 @@ def test_equity_agent_hk_share():
 def test_equity_agent_us_share():
     """测试美股分析"""
     print("\n" + "=" * 60)
-    print("测试美股分析 - 特斯拉 (TSLA)")
+    print("测试美股分析 - 特斯拉 (sh600519)")
     print("=" * 60)
 
     agent = EquityAnalystAgent()
-    result = agent.analyze("TSLA")
+    result = agent.analyze("sh600519")
 
     print(f"公司名称：{result.company.name}")
     print(f"当前股价：{result.company.current_price:.2f}美元")

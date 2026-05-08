@@ -11,20 +11,20 @@ from agents.equity_analyst_ai import EquityAnalystAgent
 from agents.macro_analyst_ai import MacroAnalystAgent
 from agents.industry_analyst_ai import IndustryAnalystAgent
 
-# 直接导入 stock_info skill
-from skills.stock_info.stock_info import (
+# 直接导入 stock_data_enhanced skill
+from skills.stock_data_enhanced.stock_data import (
     get_stock_quote,
     get_company_info,
     get_stock_news,
-    get_stock_history,
-    get_macro_data
+    get_history
 )
+from data.finance_data import FinancialDataFetcher
 
 
 def test_stock_info_integration():
-    """测试 stock_info skill 集成"""
+    """测试 stock_data_enhanced skill 集成"""
     print("\n" + "=" * 60)
-    print("测试 stock_info skill 数据获取")
+    print("测试 stock_data_enhanced skill 数据获取")
     print("=" * 60)
 
     # A 股
@@ -59,7 +59,7 @@ def test_stock_info_integration():
 
     # 历史数据
     print("\n4. 历史 K 线 - 贵州茅台")
-    history = get_stock_history("sh600519", period="d")
+    history = get_history("sh600519", period="d")
     if history:
         print(f"   获取到 {len(history)} 条数据")
         print(f"   最新数据：{history[0]}")
@@ -77,21 +77,21 @@ def test_equity_agent_data_fetch():
 
     # 测试代码转换
     print("\n1. 股票代码标准化")
-    test_symbols = ['600519', '000001', '00700', 'TSLA']
+    test_symbols = ['600519', '000001', '00700', 'HK09988']
     for s in test_symbols:
         std = agent._get_symbol_format(s)
         print(f"   {s} -> {std}")
 
     # 测试名称识别
     print("\n2. 股票名称识别")
-    test_names = ['贵州茅台', '茅台', '腾讯', '特斯拉', '宁德时代']
+    test_names = ['贵州茅台', '茅台', '腾讯', '阿里巴巴', '宁德时代']
     for name in test_names:
         symbol = agent._extract_symbol(name)
         print(f"   '{name}' -> {symbol}")
 
     # 测试技术指标分析
     print("\n3. 技术指标分析")
-    history = get_stock_history("sh600519", period="d")
+    history = get_history("sh600519", period="d")
     tech_analysis = agent._analyze_technical_indicators(history)
     print(f"   {tech_analysis}")
 
@@ -104,14 +104,7 @@ def test_macro_agent():
 
     # 测试宏观数据获取
     print("\n1. 中国宏观数据")
-    macro = get_macro_data("china")
-    print(f"   GDP 增长：{macro.get('gdp_growth')}%")
-    print(f"   通胀率：{macro.get('inflation_rate')}%")
-    print(f"   利率：{macro.get('interest_rate')}%")
-    print(f"   PMI: {macro.get('manufacturing_pmi')}")
-
-    print("\n2. 美国宏观数据")
-    macro = get_macro_data("us")
+    fetcher = FinancialDataFetcher()
     print(f"   GDP 增长：{macro.get('gdp_growth')}%")
     print(f"   通胀率：{macro.get('inflation_rate')}%")
     print(f"   利率：{macro.get('interest_rate')}%")
@@ -150,12 +143,13 @@ def test_symbol_extraction():
 
     test_queries = [
         "我想分析贵州茅台",
+        "茅台怎么样",
         "腾讯控股怎么样",
-        "特斯拉的股价",
+        "阿里巴巴的股价",
         "600519 基本面分析",
         "00700 港股分析",
         "分析一下宁德时代",
-        "AAPL 财报分析",
+        "HK09988 港股分析",
     ]
 
     print("\n查询 -> 识别的股票代码")
@@ -169,7 +163,7 @@ def main():
     """运行所有测试"""
     print("\n" + "#" * 60)
     print("#  更新后的 AI Agent 数据获取测试")
-    print("#  集成 stock_info skill - 不依赖 LLM")
+    print("#  集成 stock_data_enhanced skill - 不依赖 LLM")
     print("#" * 60)
 
     try:

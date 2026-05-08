@@ -11,6 +11,12 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from config import get_data_source_config, get_finance_config
+from skills.stock_data_enhanced.stock_data import (
+    get_stock_quote as enhanced_get_stock_quote,
+    get_stock_news as enhanced_get_stock_news,
+    get_macro_data as enhanced_get_macro_data,
+    get_industry_data as enhanced_get_industry_data
+)
 
 
 class FinancialDataFetcher:
@@ -59,7 +65,7 @@ class FinancialDataFetcher:
 
     def get_stock_quote(self, symbol: str) -> Optional[dict]:
         """
-        Get real-time stock quote from Sina Finance.
+        Get real-time stock quote using enhanced stock data skill.
 
         Args:
             symbol: Stock ticker symbol (e.g., 'sh600519', 'sz000001')
@@ -67,39 +73,7 @@ class FinancialDataFetcher:
         Returns:
             Dict with quote data or None if failed.
         """
-        try:
-            response = self.session.get(
-                self.sina_quote_url.format(symbol=symbol),
-                timeout=10
-            )
-            response.raise_for_status()
-
-            # Parse Sina's response format: var hq_str_sh600519="name,price,..."
-            text = response.text.strip()
-            if "=" in text:
-                data_str = text.split('="')[1].strip('";')
-                fields = data_str.split(",")
-
-                if len(fields) >= 32:
-                    return {
-                        "name": fields[0],
-                        "current_price": float(fields[3]) if fields[3] else 0,
-                        "open": float(fields[1]) if fields[1] else 0,
-                        "high": float(fields[4]) if fields[4] else 0,
-                        "low": float(fields[5]) if fields[5] else 0,
-                        "close": float(fields[2]) if fields[2] else 0,
-                        "volume": int(fields[8]) if fields[8] else 0,
-                        "amount": float(fields[9]) if fields[9] else 0,
-                        "bid": float(fields[11]) if fields[11] else 0,
-                        "ask": float(fields[13]) if fields[13] else 0,
-                        "timestamp": datetime.now()
-                    }
-        except requests.exceptions.RequestException as e:
-            self.logger.warning("Error fetching quote for %s: %s", symbol, e)
-        except Exception as e:
-            self.logger.exception("Unexpected error fetching quote for %s: %s", symbol, e)
-
-        return None
+        return enhanced_get_stock_quote(symbol)
 
     def get_us_stock_quote(self, symbol: str) -> Optional[dict]:
         """
@@ -173,7 +147,7 @@ class FinancialDataFetcher:
 
     def get_stock_news(self, symbol: str, limit: int = 10) -> list[dict]:
         """
-        Get recent news for a stock from Sina Finance.
+        Get recent news for a stock using enhanced stock data skill.
 
         Args:
             symbol: Stock ticker symbol
@@ -182,68 +156,7 @@ class FinancialDataFetcher:
         Returns:
             List of news dicts.
         """
-        news_list = []
-
-        try:
-            params = {
-                "page": 1,
-                "num": limit,
-                "more": 1,
-                "type": symbol.lower(),
-                "stime": int(time.time() - 86400 * 7),  # Last 7 days
-                "callback": "callback"
-            }
-
-            response = self.session.get(
-                self.sina_news_url,
-                params=params,
-                timeout=10
-            )
-
-            if response.status_code == 200:
-                text = response.text.strip()
-                # Attempt to extract JSON from callback(...) wrapper or raw JSON
-                data = None
-                inner = text
-                try:
-                    if text.startswith("callback(") and text.endswith(")"):
-                        inner = text[text.find("(") + 1: -1]
-                    else:
-                        inner = text
-
-                    data = json.loads(inner)
-                except Exception:
-                    # As a last resort, try to sanitize JS-style quotes then parse
-                    try:
-                        sanitized = re.sub(r"\b([a-zA-Z0-9_]+)\s*:\s*", r'"\\1":', inner)
-                        data = json.loads(sanitized)
-                    except Exception as e:
-                        self.logger.warning("Error parsing Sina news JSON for %s: %s; text truncated: %s", symbol, e, text[:200])
-                        data = None  # Fail quietly to use fallback
-
-                if data and "result" in data and "data" in data["result"]:
-                    for item in data["result"]["data"]:
-                        news_list.append({
-                            "title": item.get("title", ""),
-                            "source": item.get("media", "新浪财经"),
-                            "published_at": datetime.fromtimestamp(
-                                item.get("ctime", 0)
-                            ) if item.get("ctime") else datetime.now(),
-                            "url": item.get("url", ""),
-                            "summary": item.get("intro", "")
-                        })
-
-        except requests.exceptions.RequestException as e:
-            self.logger.warning("Network error fetching Sina news for %s: %s", symbol, e)
-        except Exception as e:
-            self.logger.exception("Unexpected error fetching Sina news for %s: %s", symbol, e)
-
-        # Fallback to Eastmoney if Sina fails
-        if not news_list:
-            self.logger.info("Falling back to Eastmoney news for %s", symbol)
-            news_list = self._get_eastmoney_news(symbol, limit)
-
-        return news_list
+        return enhanced_get_stock_news(symbol, limit)
 
     def _get_eastmoney_news(self, symbol: str, limit: int = 10) -> list[dict]:
         """Get news from Eastmoney as fallback."""
@@ -338,7 +251,7 @@ class FinancialDataFetcher:
 
     def get_macro_data(self, country: str = "china") -> Optional[dict]:
         """
-        Get macroeconomic data.
+        Get macroeconomic data using enhanced stock data skill.
 
         Args:
             country: Country name ('china' or 'us')
@@ -346,56 +259,11 @@ class FinancialDataFetcher:
         Returns:
             Dict with macro indicators or None if failed.
         """
-        macro_data = {
-            "country": country,
-            "timestamp": datetime.now(),
-            "as_of": datetime.now(),
-            "data_source": "Eastmoney macro endpoint with default fallback",
-            "is_fallback": True,
-        }
-
-        try:
-            if country.lower() == "china":
-                # Fetch China macro data from Eastmoney
-                params = {
-                    "type": "fjrd",
-                    "page": 1,
-                    "pageSize": 10
-                }
-
-                response = self.session.get(
-                    "https://data.eastmoney.com/cjsj/fjrd.aspx",
-                    params=params,
-                    timeout=10
-                )
-
-                macro_data.update(self.china_macro_defaults)
-
-            else:  # US
-                macro_data.update(self.us_macro_defaults)
-
-        except Exception as e:
-            print(f"Error fetching macro data: {e}")
-            if country.lower() == "china":
-                macro_data.update({
-                    "gdp_growth": 5.0,
-                    "inflation_rate": 0.2,
-                    "interest_rate": 3.45,
-                    "unemployment_rate": 5.1
-                })
-            else:
-                macro_data.update({
-                    "gdp_growth": 2.5,
-                    "inflation_rate": 3.2,
-                    "interest_rate": 5.25,
-                    "unemployment_rate": 3.8
-                })
-
-        return macro_data
+        return enhanced_get_macro_data(country)
 
     def get_industry_data(self, sector: str) -> Optional[dict]:
         """
-        Get industry/sector analysis data.
+        Get industry/sector analysis data using enhanced stock data skill.
 
         Args:
             sector: Industry sector name
@@ -403,56 +271,7 @@ class FinancialDataFetcher:
         Returns:
             Dict with industry metrics or None if failed.
         """
-        try:
-            # Fetch industry data from Eastmoney
-            params = {
-                "pt": "6",
-                "p": 1,
-                "ps": 50,
-                "sr": 1,
-                "st": "1",
-                "js": "var hkEnAwHx="
-            }
-
-            response = self.session.get(
-                self.eastmoney_industry_url,
-                params=params,
-                timeout=10
-            )
-
-            industry_defaults = self.industry_defaults
-
-            sector_lower = sector.lower()
-            for key, value in industry_defaults.items():
-                if key in sector_lower:
-                    return {
-                        "sector": sector,
-                        **value,
-                        "as_of": datetime.now(),
-                        "data_source": "Eastmoney industry endpoint with default fallback",
-                        "is_fallback": True,
-                    }
-
-            # Default to technology if no match
-            return {
-                "sector": sector,
-                **industry_defaults["technology"],
-                "as_of": datetime.now(),
-                "data_source": "Eastmoney industry endpoint with default fallback",
-                "is_fallback": True,
-            }
-
-        except Exception as e:
-            print(f"Error fetching industry data: {e}")
-            return {
-                "sector": sector,
-                "sector_growth": 8.0,
-                "avg_pe_ratio": 25.0,
-                "market_sentiment": "neutral",
-                "as_of": datetime.now(),
-                "data_source": "default industry fallback",
-                "is_fallback": True,
-            }
+        return enhanced_get_industry_data(sector)
 
 
 # Singleton instance

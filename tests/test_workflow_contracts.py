@@ -209,21 +209,21 @@ def test_schema_provenance_fields_have_defaults_and_accept_values():
         is_fallback=True,
     )
     company = CompanyData(
-        symbol="TSLA",
-        name="Tesla",
-        sector="汽车",
+        symbol="sh600519",
+        name="贵州茅台",
+        sector="白酒",
         market_cap=0.0,
         pe_ratio=0.0,
-        current_price=200.0,
-        market="美股",
-        currency="USD",
+        current_price=1800.0,
+        market="A股",
+        currency="CNY",
         data_source="quote-source",
     )
 
     assert macro.data_source == "macro-source"
     assert macro.is_fallback is True
-    assert company.market == "美股"
-    assert company.currency == "USD"
+    assert company.market == "A股"
+    assert company.currency == "CNY"
 
 
 def test_analyze_endpoint_passes_use_cache(monkeypatch):
@@ -251,7 +251,7 @@ def test_analyze_endpoint_passes_use_cache(monkeypatch):
     client = TestClient(app)
     response = client.post(
         "/analysis/analyze",
-        json={"query": "Analyze TSLA", "use_cache": False},
+        json={"query": "分析贵州茅台", "use_cache": False},
     )
 
     assert response.status_code == 200
@@ -274,7 +274,7 @@ def test_redis_keyword_search_uses_metadata_query():
         def hgetall(self, key):
             return {
                 "summary": "缓存摘要",
-                "metadata": '{"query": "分析特斯拉股票", "symbol": "TSLA"}',
+                "metadata": '{"query": "分析贵州茅台股票", "symbol": "sh600519"}',
                 "created_at": "2026-05-03T00:00:00",
             }
 

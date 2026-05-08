@@ -66,14 +66,14 @@ class TestCompanyData:
     def test_create_company_data(self):
         """Test creating a valid CompanyData."""
         data = CompanyData(
-            symbol="AAPL",
-            name="Apple Inc.",
+            symbol="HK09988",
+            name="阿里巴巴",
             sector="Technology",
             market_cap=2650.0,
             pe_ratio=28.5,
             current_price=172.75
         )
-        assert data.symbol == "AAPL"
+        assert data.symbol == "HK09988"
         assert data.market_cap == 2650.0
 
 
@@ -99,8 +99,8 @@ class TestCompanyAnalysis:
     def test_create_company_analysis(self):
         """Test creating a valid CompanyAnalysis."""
         company = CompanyData(
-            symbol="TSLA",
-            name="Tesla, Inc.",
+            symbol="sh600519",
+            name="贵州茅台, Inc.",
             sector="Automotive",
             market_cap=580.5,
             pe_ratio=45.2,
@@ -114,7 +114,7 @@ class TestCompanyAnalysis:
             risks=["Risk 1"],
             summary="Test summary"
         )
-        assert analysis.company.symbol == "TSLA"
+        assert analysis.company.symbol == "sh600519"
         assert analysis.technical_indicator == "buy"
         assert len(analysis.risks) == 1
 
@@ -142,8 +142,8 @@ class TestResearchReport:
             summary="Industry summary"
         )
         company = CompanyData(
-            symbol="NVDA",
-            name="NVIDIA Corporation",
+            symbol="HK00700",
+            name="腾讯控股 Corporation",
             sector="Technology",
             market_cap=1750.0,
             pe_ratio=65.8,
@@ -158,7 +158,7 @@ class TestResearchReport:
             summary="Company summary"
         )
         report = ResearchReport(
-            query="Analyze NVDA",
+            query="Analyze HK00700",
             macro_analysis=macro,
             industry_analysis=industry,
             company_analysis=company_analysis,
@@ -168,6 +168,6 @@ class TestResearchReport:
             time_horizon="3-6 months",
             full_report="# Report"
         )
-        assert report.query == "Analyze NVDA"
+        assert report.query == "Analyze HK00700"
         assert report.recommendation == "buy"
         assert report.target_price == 800.0

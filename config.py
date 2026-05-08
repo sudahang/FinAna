@@ -40,6 +40,14 @@ class DataSourceConfig(BaseModel):
     # Tencent Finance
     tencent_quote_url: str = "https://qt.gtimg.cn/q={symbol}"
 
+    # Alpha Vantage (美股备用数据源)
+    alpha_vantage_api_key: str = ""
+    alpha_vantage_base_url: str = "https://www.alphavantage.co/query"
+
+    # Finnhub (美股备用数据源，免费 60 次/分钟)
+    finnhub_api_key: str = ""
+    finnhub_base_url: str = "https://finnhub.io/api/v1"
+
     # Eastmoney
     eastmoney_stock_search_url: str = "https://searchapi.eastmoney.com/api/suggest/get"
     eastmoney_stock_detail_url: str = "https://push2.eastmoney.com/api/qt/stock/get"
@@ -230,7 +238,10 @@ def get_llm_config() -> LLMConfig:
 
 def get_data_source_config() -> DataSourceConfig:
     """Get data source configuration."""
-    return DataSourceConfig()
+    return DataSourceConfig(
+        alpha_vantage_api_key=os.getenv("ALPHA_VANTAGE_API_KEY", ""),
+        finnhub_api_key=os.getenv("FINNHUB_API_KEY", "")
+    )
 
 
 def get_webui_config() -> WebUIConfig:

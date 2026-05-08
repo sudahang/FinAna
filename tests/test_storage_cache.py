@@ -167,7 +167,7 @@ def test_redis_cache_operations():
         summary = "这是一个测试报告摘要"
         metadata = {
             "query": "测试查询",
-            "symbol": "TSLA",
+            "symbol": "sh600519",
             "country": "us",
             "sector": "汽车",
             "recommendation": "买入",
@@ -199,7 +199,7 @@ def test_redis_cache_operations():
             print("\n查找相似报告...")
             similar = redis_client.find_similar_reports(
                 query="测试查询",
-                symbol="TSLA",
+                symbol="sh600519",
                 limit=5,
             )
             print(f"✅ 找到 {len(similar)} 个相似报告")

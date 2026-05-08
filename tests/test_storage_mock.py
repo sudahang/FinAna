@@ -131,9 +131,9 @@ def test_report_id_generation():
     cache_service = ReportCacheService(enable_cache=False)
 
     # 测试 ID 生成
-    id1 = cache_service._generate_report_id("分析特斯拉", "TSLA")
-    id2 = cache_service._generate_report_id("分析特斯拉", "TSLA")
-    id3 = cache_service._generate_report_id("分析苹果", "AAPL")
+    id1 = cache_service._generate_report_id("分析特斯拉", "sh600519")
+    id2 = cache_service._generate_report_id("分析特斯拉", "sh600519")
+    id3 = cache_service._generate_report_id("分析苹果", "HK09988")
 
     # 相同查询应该生成不同的 ID (因为包含时间戳)
     print_result("生成报告 ID", len(id1) == 32, f"ID: {id1}")
@@ -272,7 +272,7 @@ def test_mock_cache_workflow():
         ),
         company_analysis=CompanyAnalysis(
             company=CompanyData(
-                symbol="TSLA",
+                symbol="sh600519",
                 name="特斯拉",
                 sector="电动汽车",
                 market_cap=800.0,
@@ -337,7 +337,7 @@ def test_mock_cache_workflow():
     if os.path.exists(meta_path):
         with open(meta_path, "r", encoding="utf-8") as f:
             loaded_meta = json.load(f)
-        symbol_match = loaded_meta.get("symbol") == "TSLA"
+        symbol_match = loaded_meta.get("symbol") == "sh600519"
         print_result("模拟检索元数据", symbol_match, f"symbol={loaded_meta.get('symbol')}")
 
     # 清理

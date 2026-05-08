@@ -59,7 +59,7 @@ class TestAnalysisEndpoints:
         """Test the analyze endpoint."""
         response = client.post(
             "/analysis/analyze",
-            json={"query": "Analyze Tesla stock"}
+            json={"query": "分析贵州茅台"}
         )
         assert response.status_code == 200
         data = response.json()
@@ -89,7 +89,7 @@ class TestAnalysisEndpoints:
         # First create a task
         analyze_response = client.post(
             "/analysis/analyze",
-            json={"query": "Analyze NVDA"}
+            json={"query": "分析贵州茅台"}
         )
         task_id = analyze_response.json()["task_id"]
 
@@ -110,7 +110,7 @@ class TestAnalysisEndpoints:
         # First create a task
         analyze_response = client.post(
             "/analysis/analyze",
-            json={"query": "Analyze AAPL"}
+            json={"query": "分析阿里巴巴"}
         )
         task_id = analyze_response.json()["task_id"]
 
@@ -139,7 +139,7 @@ class TestAnalysisEndpoints:
         # Submit analysis request
         response = client.post(
             "/analysis/analyze",
-            json={"query": "Should I buy Tesla?"}
+            json={"query": "我应该买入贵州茅台吗？"}
         )
         assert response.status_code == 200
 
@@ -150,16 +150,16 @@ class TestAnalysisEndpoints:
         assert result_response.status_code == 200
 
         data = result_response.json()
-        assert data["query"] == "Should I buy Tesla?"
+        assert data["query"] == "我应该买入贵州茅台吗？"
         assert data["recommendation"] in ["buy", "hold", "sell"]
         assert "# 投资研究报告" in data["full_report"]
 
     def test_multiple_sequential_analyses(self):
         """Test multiple sequential analysis requests."""
         queries = [
-            "Analyze TSLA",
-            "Analyze NVDA",
-            "Analyze MSFT"
+            "分析贵州茅台",
+            "分析腾讯控股",
+            "分析阿里巴巴"
         ]
 
         task_ids = []

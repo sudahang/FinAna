@@ -123,10 +123,10 @@ def test_conversation_memory():
     print_result("获取历史", len(history) == 4, f"{len(history)}条消息")
 
     # 设置上下文
-    memory.set_context(session_id, "symbol", "TSLA")
-    memory.set_context(session_id, "country", "us")
+    memory.set_context(session_id, "symbol", "sh600519")
+    memory.set_context(session_id, "country", "china")
     context = memory.get_context(session_id)
-    print_result("上下文存储", "symbol" in context and context["symbol"] == "TSLA")
+    print_result("上下文存储", "symbol" in context and context["symbol"] == "sh600519")
 
     # 格式化历史
     from memory.conversation_memory import format_history_for_llm
@@ -147,19 +147,19 @@ def test_input_router():
 
     router = InputRouterAgent()
 
-    # 测试查询 1: 特斯拉
-    params1 = router.parse_query("分析特斯拉股票")
+    # 测试查询 1: 贵州茅台
+    params1 = router.parse_query("分析贵州茅台股票")
     print_result(
-        "识别特斯拉",
-        params1.get("symbol") == "TSLA",
+        "识别茅台",
+        params1.get("symbol") == "sh600519",
         f"symbol={params1.get('symbol')}, country={params1.get('country')}",
     )
 
-    # 测试查询 2: 苹果
-    params2 = router.parse_query("苹果公司分析")
+    # 测试查询 2: 腾讯
+    params2 = router.parse_query("腾讯控股分析")
     print_result(
-        "识别苹果",
-        params2.get("symbol") == "AAPL",
+        "识别腾讯",
+        params2.get("symbol") == "HK00700",
         f"symbol={params2.get('symbol')}",
     )
 

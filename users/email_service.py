@@ -14,7 +14,7 @@ from users.config import config
 from users.schemas import UserProfile, NotificationTime
 from users.service import get_user_service
 from workflows.langgraph_workflow import AIResearchWorkflow
-from skills.stock_info.stock_info import get_stock_quote, get_stock_news
+from skills.stock_data_enhanced.stock_data import get_stock_quote, get_stock_news
 
 logger = logging.getLogger(__name__)
 

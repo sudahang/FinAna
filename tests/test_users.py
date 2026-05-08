@@ -23,23 +23,23 @@ class TestUserPreference:
     def test_custom_preferences(self):
         prefs = UserPreference(
             watched_industries=["科技", "新能源"],
-            watched_stocks=["TSLA", "NVDA"],
+            watched_stocks=["sh600519", "HK00700"],
             notification_time=NotificationTime.MORNING,
             email_enabled=False
         )
         assert prefs.watched_industries == ["科技", "新能源"]
-        assert prefs.watched_stocks == ["TSLA", "NVDA"]
+        assert prefs.watched_stocks == ["sh600519", "HK00700"]
         assert prefs.notification_time == NotificationTime.MORNING
         assert prefs.email_enabled is False
 
     def test_preferences_model_dump(self):
         prefs = UserPreference(
             watched_industries=["科技"],
-            watched_stocks=["TSLA"]
+            watched_stocks=["sh600519"]
         )
         dump = prefs.model_dump()
         assert dump["watched_industries"] == ["科技"]
-        assert dump["watched_stocks"] == ["TSLA"]
+        assert dump["watched_stocks"] == ["sh600519"]
 
 
 class TestUserProfile:
@@ -55,7 +55,7 @@ class TestUserProfile:
 
     def test_profile_with_all_fields(self):
         prefs = UserPreference(
-            watched_stocks=["TSLA"],
+            watched_stocks=["sh600519"],
             notification_time=NotificationTime.EVENING
         )
         user = UserProfile(
@@ -91,12 +91,12 @@ class TestUserCreate:
         assert request.preferences is None
 
     def test_create_user_with_preferences(self):
-        prefs = UserPreference(watched_stocks=["TSLA"])
+        prefs = UserPreference(watched_stocks=["sh600519"])
         request = UserCreate(
             email="test@example.com",
             preferences=prefs
         )
-        assert request.preferences.watched_stocks == ["TSLA"]
+        assert request.preferences.watched_stocks == ["sh600519"]
 
 
 class TestUserUpdate:
@@ -107,9 +107,9 @@ class TestUserUpdate:
         assert update.is_active is None
 
     def test_update_preferences_only(self):
-        prefs = UserPreference(watched_stocks=["NVDA"])
+        prefs = UserPreference(watched_stocks=["HK00700"])
         update = UserUpdate(preferences=prefs)
-        assert update.preferences.watched_stocks == ["NVDA"]
+        assert update.preferences.watched_stocks == ["HK00700"]
 
 
 class TestUserService:
@@ -148,7 +148,7 @@ class TestUserService:
             email="test@example.com",
             name="Test User",
             preferences=UserPreference(
-                watched_stocks=["TSLA", "AAPL"],
+                watched_stocks=["sh600519", "HK09988"],
                 watched_industries=["科技"]
             )
         )
@@ -157,7 +157,7 @@ class TestUserService:
 
         assert user.email == "test@example.com"
         assert user.name == "Test User"
-        assert user.preferences.watched_stocks == ["TSLA", "AAPL"]
+        assert user.preferences.watched_stocks == ["sh600519", "HK09988"]
         assert user.is_active is True
         assert user.user_id is not None
 
@@ -290,7 +290,7 @@ class TestUserService:
         test_user = UserProfile(
             user_id="test123",
             email="test@example.com",
-            preferences=UserPreference(watched_stocks=["TSLA"])
+            preferences=UserPreference(watched_stocks=["sh600519"])
         )
 
         mock_redis.client.get.return_value = test_user.model_dump_json()
@@ -300,11 +300,11 @@ class TestUserService:
 
         updated = service.update_preferences(
             user_id="test123",
-            watched_stocks=["TSLA", "NVDA"],
+            watched_stocks=["sh600519", "HK00700"],
             notification_time=NotificationTime.EVENING
         )
 
-        assert updated.preferences.watched_stocks == ["TSLA", "NVDA"]
+        assert updated.preferences.watched_stocks == ["sh600519", "HK00700"]
         assert updated.preferences.notification_time == NotificationTime.EVENING
 
     @patch('users.service.get_redis_client')
@@ -392,12 +392,12 @@ class TestUserService:
         user1 = UserProfile(
             user_id="u1",
             email="user1@example.com",
-            preferences=UserPreference(watched_stocks=["TSLA"])
+            preferences=UserPreference(watched_stocks=["sh600519"])
         )
         user2 = UserProfile(
             user_id="u2",
             email="user2@example.com",
-            preferences=UserPreference(watched_stocks=["AAPL"])
+            preferences=UserPreference(watched_stocks=["HK09988"])
         )
 
         mock_client.hkeys.return_value = ["user1@example.com", "user2@example.com"]
@@ -409,7 +409,7 @@ class TestUserService:
         mock_get_redis.return_value = mock_redis
 
         service = UserService(redis_client=mock_redis)
-        users = service.get_users_by_stock("TSLA")
+        users = service.get_users_by_stock("sh600519")
 
         assert len(users) == 1
         assert users[0].user_id == "u1"
@@ -450,7 +450,7 @@ class TestEmailService:
         report = DailyReport(
             user=test_user,
             stock_summaries=[
-                {"symbol": "TSLA", "name": "Tesla", "price": 250.0, "change": 2.5, "news": [{"title": "Test News"}]}
+                {"symbol": "sh600519", "name": "贵州茅台", "price": 250.0, "change": 2.5, "news": [{"title": "Test News"}]}
             ],
             industry_summaries=[],
             generated_at=datetime(2026, 4, 13, 18, 0, 0)
@@ -459,7 +459,7 @@ class TestEmailService:
         html = service.render_html_report(report)
         assert "FinAna" in html
         assert "Test User" in html
-        assert "TSLA" in html
+        assert "sh600519" in html
         assert "Report" in html
 
     def test_render_html_report_evening(self):
@@ -620,7 +620,7 @@ class TestIntegration:
             email="lifecycle@test.com",
             name="Lifecycle Test",
             preferences=UserPreference(
-                watched_stocks=["TSLA", "NVDA"],
+                watched_stocks=["sh600519", "HK00700"],
                 watched_industries=["科技", "新能源"],
                 notification_time=NotificationTime.BOTH
             )
@@ -633,7 +633,7 @@ class TestIntegration:
 
         updated = service.update_preferences(
             user_id=created.user_id,
-            watched_stocks=["TSLA", "NVDA", "AAPL"],
+            watched_stocks=["sh600519", "HK00700", "HK09988"],
             email_enabled=False
         )
         assert len(updated.preferences.watched_stocks) == 3
