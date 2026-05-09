@@ -911,36 +911,31 @@ class EnhancedStockDataFetcher:
 
     def _get_industry_defaults(self, sector: str, is_error: bool = False) -> dict:
         """获取行业默认数据"""
-        industry_defaults = {
-            "technology": {
-                "sector_growth": 12.5,
-                "avg_pe_ratio": 30.0,
-                "market_sentiment": "bullish",
-                "turnover_rate": 2.5,
-            },
-            "finance": {
-                "sector_growth": 5.0,
-                "avg_pe_ratio": 8.0,
-                "market_sentiment": "neutral",
-                "turnover_rate": 1.0,
-            },
-            "healthcare": {
-                "sector_growth": 10.0,
-                "avg_pe_ratio": 25.0,
-                "market_sentiment": "bullish",
-                "turnover_rate": 2.0,
-            },
-            "consumer": {
-                "sector_growth": 8.0,
-                "avg_pe_ratio": 20.0,
-                "market_sentiment": "neutral",
-                "turnover_rate": 1.5,
-            },
+        sector_mapping = {
+            "科技": {"sector_growth": 12.5, "avg_pe_ratio": 30.0, "market_sentiment": "bullish", "turnover_rate": 2.5},
+            "汽车": {"sector_growth": 10.0, "avg_pe_ratio": 18.0, "market_sentiment": "bullish", "turnover_rate": 2.0},
+            "医疗": {"sector_growth": 10.0, "avg_pe_ratio": 25.0, "market_sentiment": "bullish", "turnover_rate": 2.0},
+            "金融": {"sector_growth": 5.0, "avg_pe_ratio": 8.0, "market_sentiment": "neutral", "turnover_rate": 1.0},
+            "消费": {"sector_growth": 8.0, "avg_pe_ratio": 20.0, "market_sentiment": "neutral", "turnover_rate": 1.5},
+            "能源": {"sector_growth": 6.0, "avg_pe_ratio": 12.0, "market_sentiment": "neutral", "turnover_rate": 1.2},
+            "technology": {"sector_growth": 12.5, "avg_pe_ratio": 30.0, "market_sentiment": "bullish", "turnover_rate": 2.5},
+            "finance": {"sector_growth": 5.0, "avg_pe_ratio": 8.0, "market_sentiment": "neutral", "turnover_rate": 1.0},
+            "healthcare": {"sector_growth": 10.0, "avg_pe_ratio": 25.0, "market_sentiment": "bullish", "turnover_rate": 2.0},
+            "consumer": {"sector_growth": 8.0, "avg_pe_ratio": 20.0, "market_sentiment": "neutral", "turnover_rate": 1.5},
         }
 
+        if sector in sector_mapping:
+            return {
+                "sector": sector,
+                **sector_mapping[sector],
+                "as_of": datetime.now(),
+                "data_source": "Industry defaults",
+                "is_fallback": True,
+            }
+
         sector_lower = sector.lower()
-        for key, value in industry_defaults.items():
-            if key in sector_lower:
+        for key, value in sector_mapping.items():
+            if key in sector_lower or sector_lower in key:
                 return {
                     "sector": sector,
                     **value,
@@ -951,7 +946,10 @@ class EnhancedStockDataFetcher:
 
         return {
             "sector": sector,
-            **industry_defaults.get("technology", {}),
+            "sector_growth": 8.0,
+            "avg_pe_ratio": 15.0,
+            "market_sentiment": "neutral",
+            "turnover_rate": 1.5,
             "as_of": datetime.now(),
             "data_source": "Industry defaults fallback",
             "is_fallback": True,
