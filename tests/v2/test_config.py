@@ -1,5 +1,14 @@
 from pathlib import Path
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _clear_settings_cache():
+    from finana.config import get_settings
+
+    get_settings.cache_clear()
+
 
 def test_settings_defaults(tmp_path, monkeypatch):
     monkeypatch.setenv("FINANA_HOME", str(tmp_path))
@@ -30,3 +39,17 @@ def test_get_settings_cached(monkeypatch, tmp_path):
     from finana.config import get_settings
 
     assert get_settings() is get_settings()
+
+
+def test_finana_home_expands_user(monkeypatch):
+    monkeypatch.setenv("FINANA_HOME", "~/finana-x")
+    from finana.config import Settings
+
+    s = Settings()
+    home = Path.home() / "finana-x"
+    assert s.database_path == home / "finana.db"
+    assert s.sessions_dir == home / "sessions"
+    assert s.logs_dir == home / "logs"
+    assert "~" not in str(s.database_path)
+    assert "~" not in str(s.sessions_dir)
+    assert "~" not in str(s.logs_dir)
