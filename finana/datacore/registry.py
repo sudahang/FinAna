@@ -33,11 +33,12 @@ _try_register_akshare()
 
 def _try_register_alltick():
     def build(settings):
-        if not settings.alltick_token:
+        token = getattr(settings, "alltick_token", "")
+        if not token:
             raise ImportError("alltick token 未配置")
         from finana.datacore.providers.alltick import AlltickProvider
 
-        return AlltickProvider(token=settings.alltick_token)
+        return AlltickProvider(token=token)
     register_builder("alltick", build)
 
 
@@ -46,7 +47,9 @@ _try_register_alltick()
 
 def build_providers(settings: Settings) -> list:
     """按 settings.provider_order 顺序实例化渠道，跳过不可用者并返回实例列表。"""
-    order = [x.strip() for x in settings.provider_order.split(",") if x.strip()]
+    default_order = "eastmoney,sina_tencent,akshare,alltick"
+    order_str = getattr(settings, "provider_order", "") or default_order
+    order = [x.strip() for x in order_str.split(",") if x.strip()]
     out = []
     for name in order:
         builder = _BUILDERS.get(name)

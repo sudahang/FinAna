@@ -67,3 +67,13 @@ def test_unavailable_when_empty_chain():
     core._routers["quote"]._domains["quote"] = []
     with pytest.raises(DataUnavailable):
         core.get_quote("600519.SH")
+
+
+def test_build_providers_tolerates_settings_without_fields():
+    from types import SimpleNamespace
+    from finana.datacore import registry
+
+    providers = registry.build_providers(SimpleNamespace())
+    names = [p.name for p in providers]
+    assert "eastmoney" in names and "sina_tencent" in names
+    assert "alltick" not in names
