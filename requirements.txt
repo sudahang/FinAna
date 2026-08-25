@@ -30,3 +30,6 @@ apscheduler>=3.10.0
 # v2 (DeepSeek Harness)
 pydantic-settings>=2.0
 fastmcp>=2.0
+
+# Optional: curl-cffi>=0.7 —— TLS 指纹反爬兜底(东财渠道)；缺失时自动降级 requests
+# curl-cffi>=0.7
