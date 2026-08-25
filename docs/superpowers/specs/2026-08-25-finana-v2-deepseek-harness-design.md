@@ -155,11 +155,11 @@ SQLite 统一启用 WAL；启动时完整性检查。
 
 ### 8.1 CLI（`finana` 命令，交互式 REPL，rich 渲染）
 - 直接自然语言提问 → 分析报告（Markdown 流式渲染 + 预测卡片高亮）
-- 斜杠命令：`/track <symbol> <period>`、`/goals`、`/accuracy [symbol]`、`/profile`、`/sessions`、`/doctor`（数据源健康探测）
+- 斜杠命令：`/track <symbol> <period>`、`/goals`、`/accuracy [symbol]`、`/profile`、`/sessions`、`/doctor`（数据源健康探测）、`/stats [today|7d]`（运行指标）
 - 启动即检查 DEEPSEEK_API_KEY 与 SQLite 完整性
 
 ### 8.2 轻量 Web（FastAPI + 无构建单页聊天界面）
-- `POST /api/chat`（SSE 流式）、`GET /api/goals`、`POST /api/goals`、`GET /api/accuracy/{symbol}`、`GET/PUT /api/profile`
+- `POST /api/chat`（SSE 流式）、`GET /api/goals`、`POST /api/goals`、`GET /api/accuracy/{symbol}`、`GET/PUT /api/profile`、`GET /api/metrics?range=`
 - 前端为单个静态 HTML（原生 fetch+SSE），由 FastAPI 托管，无前端框架无 node 构建
 - `finana web --port 8000` 启动
 
@@ -174,14 +174,45 @@ SQLite 统一启用 WAL；启动时完整性检查。
 | API key 缺失/欠费 | 启动即校验并给出配置指引 |
 | SQLite 异常 | WAL + 启动完整性检查 |
 
-## 10. 测试策略
+所有错误路径（CLI 输出、Web 错误响应、日志）均携带 trace_id，可凭其检索该次分析的全链路日志与指标。
+
+## 10. 可观测性：日志与指标
+
+### 10.1 结构化日志
+
+- **格式**：文件为 JSON Lines（`~/.finana/logs/finana.log`，RotatingFileHandler 按大小轮转保留 N 份）；CLI 控制台只输出简洁人类可读摘要，完整细节落盘
+- **trace_id 贯穿**：每次分析 run 生成 trace_id（ContextVar 传播），写入该次所有日志；同时冗余存储在 goals/predictions 记录中——报错时向用户展示 trace_id，便于按 id 定位全链路
+- **记录内容**：
+  - Orchestrator 各阶段起止与耗时（上下文组装/harness run/解析/回写）
+  - harness_adapter：每次 run 的 prompt 元信息（长度非全文）、final_response 长度、finish_reason、token usage（从 RunResult 提取）
+  - 工具调用层：从 dsh 事件流（`tool/call`、`tool/result`）提取工具名、参数摘要、耗时、成功与否——agent 行为审计不重复造轮子，dsh Trajectory JSONL 是原始事实源，我们只索引关键事件到自己的日志
+  - datacore：每渠道请求耗时、结果条数、熔断状态变迁
+  - memory/goal/prediction：写操作与验证判定结果
+
+### 10.2 运行指标（零运维方案）
+
+不引入 Prometheus 等外部栈，用 SQLite `metrics` 表（`ts, name, value, tags_json`）+ 聚合查询：
+
+| 指标 | 用途 |
+|---|---|
+| 分析时延（P50/P95，分阶段） | 性能回归定位 |
+| token 用量（input/output，按 run/日） | 成本监控 |
+| 工具调用次数与失败率（按工具名） | 发现 agent 行为异常 |
+| 数据渠道成功率/延迟/熔断次数（按渠道×数据域） | 渠道质量追踪，支撑 doctor 选型 |
+| 缓存命中率、memory 检索耗时 | 数据层健康 |
+| 预测验证结果分布、goal 到期执行情况 | 业务闭环健康 |
+
+- 暴露方式：CLI `/stats [today|7d]`、Web `GET /api/metrics?range=`（JSON 聚合）
+- 实现为 `finana/observability.py`：`get_logger()`、`run_trace()` 上下文管理器、`MetricsService.record()`；对业务代码侵入最小（装饰器/上下文管理器为主）
+
+## 11. 测试策略
 
 - **单元**：datacore providers 用录制 fixture 回放（不打真实 API）；memory/goal/prediction CRUD 与检索；熔断器状态机
 - **集成**：harness_adapter 用 mock JSON-RPC 子进程测协议交互；MCP 工具用 FastMCP 内存客户端直调
 - **E2E 冒烟**（需真实 key，手动/CI 可选标签）：一只股票完整分析→预测落库→模拟到期→自动验证→命中率更新
 - **finana-doctor**：一键实测所有渠道当前可用性并出健康报表——既是运维工具也是渠道选型依据（渠道实测 spike 即基于它）
 
-## 11. 代码结构与迁移
+## 12. 代码结构与迁移
 
 ```
 FinAna/
@@ -189,6 +220,7 @@ FinAna/
 │   ├── config.py            # pydantic-settings
 │   ├── harness_adapter.py   # dsh 唯一交互模块
 │   ├── orchestrator.py
+│   ├── observability.py     # 日志/trace_id/指标
 │   ├── prompts/             # 系统提示词、SKILL.md、预测输出规范
 │   ├── datacore/  mcp_server/  memory/  goals/  prediction/
 │   ├── cli.py
@@ -200,7 +232,7 @@ FinAna/
 
 迁移决策（已确认"彻底重写"）：v1 的 `agents/ workflows/ llm/ api/ web_ui/ memory/ storage/ users/ skills/ data/ config.py cli_analyzer.py` 及旧测试在实现计划中删除（git 历史保留）。依赖收敛为：`deepseek-harness-sdk(锁版)、fastmcp、fastapi、uvicorn、rich、pydantic-settings、requests`；`akshare` 作为可选 extra。Python ≥3.10（SDK 要求）。
 
-## 12. 风险与对策
+## 13. 风险与对策
 
 | 风险 | 对策 |
 |---|---|
@@ -209,6 +241,6 @@ FinAna/
 | 预测准确率天然有限 | 闭环透明呈现命中率与置信度校准，不做虚假承诺；报告强制声明非投资建议 |
 | LLM 幻觉编造数据 | 提示词强约束"只用工具返回的数据"；关键数字要求标注来源工具名 |
 
-## 13. 本期范围外（留扩展位）
+## 14. 本期范围外（留扩展位）
 
-美股/港股渠道与 symbol 规范扩展；embedding 升级 L3；邮件/Webhook 推送；多用户与鉴权；组合层面（多股票对比、仓位建议）。
+美股/港股渠道与 symbol 规范扩展；embedding 升级 L3；邮件/Webhook 推送；多用户与鉴权；组合层面（多股票对比、仓位建议）；Prometheus/OpenTelemetry 等外部指标栈导出。
