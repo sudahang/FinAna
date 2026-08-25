@@ -5,7 +5,10 @@ from dataclasses import dataclass, field
 
 @dataclass
 class Bar:
-    """单根 K 线。"""
+    """单根 K 线。
+
+    A 股 volume 单位约定：Quote.volume=股、Bar.volume=手（K线各渠道原始口径）。
+    """
 
     date: str
     open_: float

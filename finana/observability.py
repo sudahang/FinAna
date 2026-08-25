@@ -83,7 +83,7 @@ class MetricsService:
         self.conn.commit()
 
     def summary(self, name: str, since: float) -> dict:
-        """返回该指标自 since 起的 count/avg/p50/max 摘要。"""
+        """返回该指标自 since 起的 count/avg/p50/p95/max 摘要。"""
         rows = self.conn.execute(
             "SELECT value FROM metrics WHERE name=? AND ts>=? ORDER BY value", (name, since)
         ).fetchall()
@@ -94,6 +94,7 @@ class MetricsService:
             "count": len(vals),
             "avg": round(statistics.fmean(vals), 3),
             "p50": vals[(len(vals) - 1) // 2],
+            "p95": vals[min(len(vals) - 1, round(0.95 * (len(vals) - 1)))],
             "max": max(vals),
         }
 

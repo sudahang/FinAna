@@ -48,4 +48,5 @@ def test_metrics_record_and_summary(tmp_path, monkeypatch):
     assert s["count"] == 4
     assert s["avg"] == 25
     assert s["p50"] == 20
+    assert s["p95"] == 40
     assert s["max"] == 40

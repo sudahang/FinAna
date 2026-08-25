@@ -46,7 +46,7 @@ class EastmoneyProvider:
             high=self._scaled(data.get("f44"), "f59", data),
             low=self._scaled(data.get("f45"), "f59", data),
             prev_close=prev,
-            volume=data.get("f47", 0), amount=data.get("f48", 0),
+            volume=data.get("f47", 0) * 100, amount=data.get("f48", 0),
             timestamp=float(data.get("f86", time.time())), source=self.name,
         )
 

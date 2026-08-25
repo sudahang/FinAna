@@ -24,6 +24,7 @@ def test_get_quote(em, requests_mock):
     assert q.symbol == "600519.SH"
     assert abs(q.price - 1525.6) < 0.01
     assert q.change_pct == pytest.approx(1.23, abs=0.01)
+    assert q.volume == 23456 * 100
     assert q.source == "eastmoney"
 
 

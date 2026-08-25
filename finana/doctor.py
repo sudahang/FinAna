@@ -49,8 +49,8 @@ def main():
     core = get_datacore()
     rows = probe(core, args.symbol)
     settings = get_settings()
-    settings.ensure_dirs()
-    out = settings.finana_home / "doctor_last.json"
+    home = settings.finana_home.expanduser()
+    out = home / "doctor_last.json"
     out.write_text(json.dumps({"ts": time.time(), "rows": rows,
                                "health": core.health()},
                               ensure_ascii=False, indent=2), encoding="utf-8")
