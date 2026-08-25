@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     db_path: Path | None = None
     log_level: str = "INFO"
     http_timeout: int = 10
+    alltick_token: str = ""
 
     @property
     def database_path(self) -> Path:
