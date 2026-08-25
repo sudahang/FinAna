@@ -13,6 +13,9 @@ from finana.datacore.symbols import normalize_symbol, to_em_secid, to_sina_code
     ("688981", "688981.SH"),
     ("sh000001", "000001.SH"),
     ("430047", "430047.BJ"),
+    ("920095", "920095.BJ"),
+    ("920000", "920000.BJ"),
+    ("900901", "900901.SH"),
 ])
 def test_normalize(raw, expected):
     assert normalize_symbol(raw) == expected

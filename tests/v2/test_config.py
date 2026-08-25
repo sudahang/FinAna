@@ -53,3 +53,17 @@ def test_finana_home_expands_user(monkeypatch):
     assert "~" not in str(s.database_path)
     assert "~" not in str(s.sessions_dir)
     assert "~" not in str(s.logs_dir)
+
+
+def test_provider_order_default_and_override():
+    from finana.config import Settings
+    from finana.datacore.registry import build_providers
+
+    s = Settings(alltick_token="")
+    assert s.provider_order == "eastmoney,sina_tencent,akshare,alltick"
+    names = [p.name for p in build_providers(s)]
+    assert names[0] == "eastmoney" and "sina_tencent" in names
+    assert "alltick" not in names
+
+    custom = Settings(provider_order="sina_tencent,eastmoney")
+    assert [p.name for p in build_providers(custom)] == ["sina_tencent", "eastmoney"]

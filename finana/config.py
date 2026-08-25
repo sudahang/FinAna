@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     http_timeout: int = 10
     alltick_token: str = ""
+    # 实测校准（Task 11）：东财全域可用且最快；新浪/腾讯在东财断连时兜底稳定；
+    # akshare 仅 K 线备用；alltick 需 token，未配置时自动跳过。
+    provider_order: str = "eastmoney,sina_tencent,akshare,alltick"
 
     @property
     def database_path(self) -> Path:

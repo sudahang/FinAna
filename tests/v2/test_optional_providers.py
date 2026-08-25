@@ -32,3 +32,18 @@ def test_alltick_quote(requests_mock):
     assert q.price == 1525.6
     assert q.source == "alltick"
     assert q.change_pct == pytest.approx(1.23, abs=0.01)
+
+
+def test_alltick_symbol_casing(monkeypatch):
+    from finana.datacore.providers import alltick as mod
+
+    captured = {}
+
+    def fake_fetch(url, params=None, headers=None, timeout=10):
+        captured.update(params or {})
+        return {"data": [{"code": "600519.SH", "last_price": 1525.6, "prev_closed": 1507.0}]}
+
+    monkeypatch.setattr(mod, "fetch_json", fake_fetch)
+    p = mod.AlltickProvider(token="tok")
+    p.get_quote("600519.SH")
+    assert captured["code"] == "600519.SH"

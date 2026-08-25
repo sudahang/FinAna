@@ -19,8 +19,8 @@ class AlltickProvider:
         self.token = token
 
     def get_quote(self, sym: str) -> Quote:
-        """从 AllTick 查询最新价并计算涨跌幅，字段名以 Task 11 实测为准。"""
-        data = fetch_json(QUERY_URL, params={"code": sym.lower(), "token": self.token})
+        """从 AllTick 查询最新价并计算涨跌幅，代码为规范大写形（如 600519.SH）。"""
+        data = fetch_json(QUERY_URL, params={"code": sym, "token": self.token})
         row = (data.get("data") or [{}])[0]
         price = float(row.get("last_price") or 0)
         prev = float(row.get("prev_closed") or 0)

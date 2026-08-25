@@ -2,6 +2,7 @@
 
 import json
 import time
+from urllib.parse import quote
 
 from finana.datacore.http import fetch_json
 from finana.datacore.models import Bar, KLine, MoneyFlowDay, Quote
@@ -11,9 +12,11 @@ PUSH2 = "https://push2.eastmoney.com/api/qt/stock/get"
 PUSH2_KLINE = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
 PUSH2_FFLOW = "https://push2.eastmoney.com/api/qt/stock/fflow/daykline/get"
 DATACENTER = "https://datacenter-web.eastmoney.com/api/data/v1/get"
-F10 = "https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/MainTargetAjaxNew"
+DATACENTER_SEC = "https://datacenter.eastmoney.com/securities/api/data/v1/get"
+F10_MAIN = "RPT_F10_FINANCE_MAINFINADATA"
 SUGGEST = "https://searchapi.eastmoney.com/api/suggest/get"
 CLIST = "https://push2.eastmoney.com/api/qt/clist/get"
+NEWS_SEARCH = "https://search-api-web.eastmoney.com/search/jsonp"
 KLT = {"d": 101, "w": 102, "m": 103}
 
 
@@ -61,13 +64,21 @@ class EastmoneyProvider:
         return KLine(symbol=sym, period=period, bars=bars[-count:], source=self.name)
 
     def resolve(self, query: str) -> list[dict]:
-        """模糊搜索股票代码，返回 [{symbol, code, name, market}]。"""
+        """模糊搜索股票代码，返回 [{symbol(规范形), code, name, market}]。"""
         data = fetch_json(SUGGEST, params={"input": query, "type": "14", "count": 5})
         out = []
         for item in (data.get("QuotationCodeTable", {}).get("Data") or []):
+            type_name = item.get("SecurityTypeName", "")
+            if "京" in type_name:
+                suffix = ".BJ"
+            elif "沪" in type_name or item.get("MktNum") == "1":
+                suffix = ".SH"
+            else:
+                suffix = ".SZ"
+            code = item.get("Code", "")
             out.append({
-                "code": item.get("Code"), "name": item.get("Name"),
-                "market": item.get("MktNum"), "symbol": f"{item.get('Code')}",
+                "code": code, "name": item.get("Name"),
+                "market": item.get("MktNum"), "symbol": f"{code}{suffix}",
             })
         return out
 
@@ -81,11 +92,11 @@ class EastmoneyProvider:
                 for r in data.get("klines", [])]
 
     def get_margin(self, sym: str, days: int = 20) -> list[dict]:
-        """获取个股近 N 日两融余额明细（RPTA_WEB_RZRQ_GGMX）。"""
+        """获取个股近 N 日两融余额明细（RPTA_WEB_RZRQ_GGMX，按 DATE 倒序）。"""
         code = sym.split(".")[0]
         data = fetch_json(DATACENTER, params={
             "reportName": "RPTA_WEB_RZRQ_GGMX", "columns": "ALL",
-            "filter": f'(scode="{code}")', "sortColumns": "dim_date",
+            "filter": f'(scode="{code}")', "sortColumns": "DATE",
             "sortTypes": "-1", "pageSize": days,
         })
         return (data.get("result") or {}).get("data") or []
@@ -101,24 +112,31 @@ class EastmoneyProvider:
         return (data.get("result") or {}).get("data") or []
 
     def get_financials(self, sym: str) -> dict:
-        """获取主要财务指标最新一期（F10 MainTargetAjaxNew）。"""
-        data = fetch_json(F10, params={"type": "0", "code": sym.replace(".", "")})
-        rows = data if isinstance(data, list) else data.get("data", [])
+        """获取主要财务指标最新一期（datacenter RPT_F10_FINANCE_MAINFINADATA）。"""
+        data = fetch_json(DATACENTER_SEC, params={
+            "reportName": F10_MAIN, "columns": "ALL",
+            "filter": f'(SECUCODE="{sym}")', "pageNumber": 1, "pageSize": 1,
+            "sortTypes": "-1", "sortColumns": "REPORT_DATE",
+            "source": "HSF10", "client": "PC",
+        })
+        rows = (data.get("result") or {}).get("data") or []
         return rows[0] if rows else {}
 
     def get_news(self, sym: str, limit: int = 10) -> list[dict]:
-        """搜索个股相关新闻，返回 [{title, date, url}]。"""
+        """搜索个股相关新闻，返回 [{title, date, url}]。
+
+        参数需手动百分号编码（requests 的 + 空格编码会被接口误解析），
+        TLS 指纹反爬由 fetch_json 内置的 curl_cffi 兜底处理。
+        """
         code = sym.split(".")[0]
-        data = fetch_json(
-            "https://search-api-web.eastmoney.com/search/jsonp",
-            params={"cb": "", "param": json.dumps({
-                "uid": "", "keyword": code, "type": ["cmsArticleWebOld"], "client": "web",
-                "clientVersion": "curr",
-                "param": {"cmsArticleWebOld": {"searchScope": "default", "sort": "default",
-                                               "pageIndex": 1, "pageSize": limit}},
-            })},
-        )
-        arts = (data.get("result", {}).get("cmsArticleWebOld") or [])
+        param = json.dumps({
+            "uid": "", "keyword": code, "type": ["cmsArticleWebOld"], "client": "web",
+            "clientVersion": "curr",
+            "param": {"cmsArticleWebOld": {"searchScope": "default", "sort": "default",
+                                           "pageIndex": 1, "pageSize": limit}},
+        }, separators=(",", ":"))
+        data = fetch_json(f"{NEWS_SEARCH}?cb=&param={quote(param, safe='')}")
+        arts = (data.get("result") or {}).get("cmsArticleWebOld") or []
         return [{"title": a.get("title", "").replace("<em>", "").replace("</em>", ""),
                  "date": a.get("date"), "url": a.get("url")} for a in arts]
 

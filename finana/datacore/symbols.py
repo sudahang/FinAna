@@ -6,10 +6,11 @@ _BJ_PREFIXES = ("43", "83", "87", "88", "92")
 
 
 def _suffix_for(code: str) -> str:
-    if code.startswith(_SH_PREFIXES):
-        return ".SH"
+    # 北交所前缀需先于上交所 "9" 前缀判断（920xxx 为北证，900xxx 为沪 B）。
     if code.startswith(_BJ_PREFIXES):
         return ".BJ"
+    if code.startswith(_SH_PREFIXES):
+        return ".SH"
     return ".SZ"
 
 
