@@ -30,11 +30,15 @@ def test_quote_falls_back_to_tencent(requests_mock):
     requests_mock.get(TX_URL,
                       text='v_sh600519="1~贵州茅台~600519~1525.60~1507.00~1515.00~'
                            '23456~35670~'
-                           '0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~'
+                           '0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~'
                            '1532.00~1518.00~0~23456~35670~'
                            '0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0";')
     q = SinaTencentProvider().get_quote("600519.SH")
     assert q.price == 1525.6
+    assert q.high == 1532.0
+    assert q.low == 1518.0
+    assert q.volume == 2345600.0
+    assert q.amount == 356700000.0
     assert q.source.endswith("_tx")
 
 
