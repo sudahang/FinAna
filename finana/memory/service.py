@@ -244,6 +244,25 @@ class MemoryService:
         ).fetchall()
         return [_prediction_dict(r) for r in rows]
 
+    def record_verdict(self, prediction_id: int, verdict: dict) -> None:
+        """写回预测验证结论并更新标的命中统计。"""
+        pred = self._conn.execute(
+            "SELECT symbol, direction, target_low, target_high FROM predictions WHERE prediction_id=?",
+            (prediction_id,),
+        ).fetchone()
+        self._conn.execute(
+            "UPDATE predictions SET verdict=?, status='verified' WHERE prediction_id=?",
+            (json.dumps(verdict, ensure_ascii=False), prediction_id),
+        )
+        if pred is not None and pred["symbol"]:
+            ok = bool(verdict.get("direction_hit"))
+            self._conn.execute(
+                "UPDATE instrument_memory SET hit_total=hit_total+1, hit_ok=hit_ok+? "
+                "WHERE symbol=?",
+                (1 if ok else 0, pred["symbol"]),
+            )
+        self._conn.commit()
+
     def build_context_block(self, symbol: str, user_query: str) -> str:
         """组装带 L2/L3/L4 标注的记忆上下文块，整体不超过 1200 字符。"""
         sections: list[str] = []
