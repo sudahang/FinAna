@@ -63,3 +63,16 @@ CREATE TABLE IF NOT EXISTS predictions (
   status TEXT NOT NULL DEFAULT 'pending',
   verdict TEXT DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS user_goals (
+  goal_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL DEFAULT 'default',
+  title TEXT NOT NULL,
+  symbol TEXT,
+  cadence_days INTEGER NOT NULL DEFAULT 30,
+  last_run_at REAL,
+  next_run_at REAL,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at REAL NOT NULL DEFAULT (strftime('%s','now')),
+  notes TEXT DEFAULT ''
+);
