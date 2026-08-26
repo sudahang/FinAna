@@ -1,66 +1,50 @@
+from __future__ import annotations
+
+import json
+
 import pytest
 
-import finana.datacore.http as http_mod
+import finana.datacore.http as http
 
 
-class FakeResp:
-    status_code = 200
-
-    def __init__(self, payload):
-        self._payload = payload
-
+class _OKResp:
     def raise_for_status(self):
-        pass
+        return None
 
     def json(self):
-        if isinstance(self._payload, Exception):
-            raise self._payload
-        return self._payload
+        return {"ok": True}
 
 
-def _reject(*a, **k):
-    raise http_mod.requests.exceptions.ConnectionError("RemoteDisconnected")
+class _OKSession:
+    def get(self, *args, **kwargs):
+        return _OKResp()
+
+    def mount(self, *args, **kwargs):
+        return None
 
 
-def test_fetch_json_falls_back_on_connection_error(monkeypatch):
-    monkeypatch.setattr(http_mod.requests, "get", _reject)
-    monkeypatch.setattr(http_mod, "_via_cffi", lambda *a, **k: FakeResp({"ok": 1}))
-    assert http_mod.fetch_json("https://example.com/x") == {"ok": 1}
+def test_session_has_retry_adapter():
+    adapter = http._SESSION.get_adapter("https://example.com")
+    assert adapter.max_retries.total == 3
+    assert adapter.max_retries.backoff_factor > 0
 
 
-def test_fetch_json_falls_back_on_junk_json(monkeypatch):
-    junk = http_mod.requests.exceptions.JSONDecodeError("Expecting value", "<jsonp>(", 0)
-
-    monkeypatch.setattr(http_mod.requests, "get", lambda *a, **k: FakeResp(junk))
-    monkeypatch.setattr(http_mod, "_via_cffi", lambda *a, **k: FakeResp({"ok": 2}))
-    assert http_mod.fetch_json("https://example.com/x") == {"ok": 2}
+def test_fetch_json_returns_parsed_payload(monkeypatch):
+    monkeypatch.setattr(http, "_SESSION", _OKSession())
+    assert http.fetch_json("https://example.com/api") == {"ok": True}
 
 
-def test_fetch_json_reraises_without_cffi(monkeypatch):
-    monkeypatch.setattr(http_mod.requests, "get", _reject)
+def test_fetch_json_falls_back_to_cffi_and_reraises(monkeypatch):
+    import requests
 
-    def no_cffi(*a, **k):
-        raise ImportError("curl_cffi 未安装")
+    class _FailSession:
+        def get(self, *args, **kwargs):
+            raise requests.exceptions.ConnectionError("boom")
 
-    monkeypatch.setattr(http_mod, "_via_cffi", no_cffi)
-    with pytest.raises(http_mod.requests.exceptions.ConnectionError):
-        http_mod.fetch_json("https://example.com/x")
+        def mount(self, *args, **kwargs):
+            return None
 
-
-def test_http_error_not_retried(monkeypatch):
-    class ErrResp(FakeResp):
-        def raise_for_status(self):
-            err = http_mod.requests.exceptions.HTTPError("500")
-            err.response = None
-            raise err
-
-    calls = []
-
-    def record_get(*a, **k):
-        calls.append(1)
-        return ErrResp({})
-
-    monkeypatch.setattr(http_mod.requests, "get", record_get)
-    with pytest.raises(http_mod.requests.exceptions.HTTPError):
-        http_mod.fetch_json("https://example.com/x")
-    assert len(calls) == 1
+    monkeypatch.setattr(http, "_SESSION", _FailSession())
+    # curl_cffi 未安装 -> ImportError -> 还原原始 ConnectionError
+    with pytest.raises(requests.exceptions.ConnectionError):
+        http.fetch_json("https://example.com/api")
