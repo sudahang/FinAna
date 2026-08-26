@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     deepseek_base_url: str = ""
     dsh_model: str = "deepseek-v4-flash"
+    dsh_max_tokens: int = 49152
+    dsh_runtime: str = "auto"
+    dsh_npm_bin: Path | None = None
+    report_ttl_days: int = 30
     finana_home: Path = Path.home() / ".finana"
     db_path: Path | None = None
     log_level: str = "INFO"

@@ -67,3 +67,21 @@ def test_provider_order_default_and_override():
 
     custom = Settings(provider_order="sina_tencent,eastmoney")
     assert [p.name for p in build_providers(custom)] == ["sina_tencent", "eastmoney"]
+
+
+def test_dsh_settings_defaults(monkeypatch, tmp_path):
+    monkeypatch.setenv("FINANA_HOME", str(tmp_path))
+    from finana.config import Settings
+
+    s = Settings()
+    assert s.dsh_runtime == "auto"
+    assert s.dsh_max_tokens == 49152
+    assert s.report_ttl_days == 30
+
+
+def test_dsh_npm_bin_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("FINANA_HOME", str(tmp_path))
+    monkeypatch.setenv("DSH_NPM_BIN", "/opt/dsh/jsonrpc-agent.mjs")
+    from finana.config import Settings
+
+    assert str(Settings().dsh_npm_bin) == "/opt/dsh/jsonrpc-agent.mjs"

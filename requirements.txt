@@ -30,6 +30,7 @@ apscheduler>=3.10.0
 # v2 (DeepSeek Harness)
 pydantic-settings>=2.0
 fastmcp>=2.0
+deepseek-harness-sdk==0.1.1rc1  # 需 --pre；runtime-bin 无 mac-x64 轮子时走 npm 模式(DSH_RUNTIME=npm)；mac-x64 需 pip install --no-deps
 
 # Optional: curl-cffi>=0.7 —— TLS 指纹反爬兜底(东财渠道)；缺失时自动降级 requests
 # curl-cffi>=0.7
