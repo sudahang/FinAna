@@ -1,8 +1,8 @@
 # 预测输出格式（Prediction Format）
 
-报告正文结束后，必须在最后一个代码围栏中输出如下结构的预测 JSON：
+报告正文结束后，必须在最后一个代码围栏中输出预测 JSON。下方为字段模板示意（非合法 JSON，禁止照抄输出；字段约束见下表）：
 
-```json
+```text
 {"direction": "up|down|sideways", "confidence": 0.0-1.0, "target_low": 可选, "target_high": 可选, "horizon_days": 正整数, "invalidation": ["失效条件1", ...], "rationale": "一句话核心论据"}
 ```
 
@@ -19,6 +19,8 @@
 | rationale | string | 核心论据 | 一句话 |
 
 ## 完整示例
+
+示例：贵州茅台。
 
 ```json
 {

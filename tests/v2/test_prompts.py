@@ -14,6 +14,8 @@ def test_system_prompt_nonempty_with_anchors():
     assert prompt.strip()
     assert "prediction" in prompt
     assert "不构成投资建议" in prompt
+    assert "mcp__finana__get_realtime_quote" in prompt
+    assert "该维度数据不可用" in prompt
 
 
 def test_system_prompt_at_most_60_lines():
