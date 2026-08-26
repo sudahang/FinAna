@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import os
 import re
 
 import pytest
@@ -207,3 +208,50 @@ def test_accuracy_command_no_data(tmp_path, capsys):
     fake = FakeOrchestrator(memory=memory)
     _handle_accuracy(fake, "TSLA")
     assert "暂无已验证预测" in capsys.readouterr().out
+
+
+def test_track_and_goals_commands(tmp_path, capsys):
+    from finana.cli import _handle_goals, _handle_track
+    from finana.memory.service import MemoryService
+    from finana.storage.db import connect
+
+    memory = MemoryService(connect(tmp_path / "finana.db"))
+    memory.upsert_instrument("600519.SH", name="贵州茅台")
+    fake = FakeOrchestrator(memory=memory)
+    _handle_track(fake, "每月跟踪贵州茅台")
+    out = capsys.readouterr().out
+    assert "已创建目标" in out and "600519.SH" in out
+    _handle_goals(fake)
+    assert "贵州茅台" in capsys.readouterr().out
+
+
+def test_doctor_command(tmp_path, capsys, monkeypatch):
+    from finana import doctor
+    from finana.cli import _handle_doctor
+
+    monkeypatch.setattr(doctor, "run", lambda symbol="600519": (
+        [{"domain": "quote", "status": "ok", "ms": 5, "detail": ""}],
+        [{"provider": "em", "domain": "quote", "state": "closed", "failures": 0, "last_error": ""}],
+    ))
+    _handle_doctor()
+    out = capsys.readouterr().out
+    assert "quote" in out and "ok" in out
+
+
+def test_stats_command(tmp_path, capsys):
+    from finana.cli import _handle_stats
+    from finana.memory.service import MemoryService
+    from finana.observability import get_metrics
+    from finana.storage.db import connect
+
+    os.environ["FINANA_HOME"] = str(tmp_path / "home")
+    from finana.config import get_settings as _gs
+
+    _gs.cache_clear()
+    import finana.observability as obs
+
+    obs._metrics = None
+    get_metrics().record("analysis.latency_ms", 9.0)
+    fake = FakeOrchestrator(memory=MemoryService(connect(tmp_path / "finana.db")))
+    _handle_stats(fake, "7d")
+    assert "analysis.latency_ms" in capsys.readouterr().out

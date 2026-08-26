@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import sys
+import time
 import uuid
 
 from finana.config import get_settings
+from finana.doctor import run as doctor_run
+from finana.goals import GoalService, Planner
 from finana.harness_adapter import HarnessUnavailable
 from finana.observability import init_logging
 from finana.orchestrator import AnalysisResult, Orchestrator
@@ -127,6 +130,21 @@ def _repl(orchestrator, session_id: str) -> int:
         if line.startswith("/accuracy"):
             _handle_accuracy(orchestrator, line[len("/accuracy") :].strip())
             continue
+        if line.startswith("/track"):
+            _handle_track(orchestrator, line[len("/track") :].strip())
+            continue
+        if line == "/goals":
+            _handle_goals(orchestrator)
+            continue
+        if line == "/sessions":
+            print(f"当前会话: {session_id}")
+            continue
+        if line == "/doctor":
+            _handle_doctor()
+            continue
+        if line.startswith("/stats"):
+            _handle_stats(line[len("/stats") :].strip())
+            continue
         if line.startswith("/"):
             print(f"未知命令: {line} (/help 查看可用命令)")
             continue
@@ -188,3 +206,58 @@ def _handle_accuracy(orchestrator, rest: str) -> None:
         f"样本={stats['total']} 方向命中={stats['direction_hits']} "
         f"方向命中率={rate} 平均置信度={conf}"
     )
+
+
+def _goal_service(orchestrator) -> GoalService:
+    return GoalService(orchestrator.memory._conn)
+
+
+def _handle_track(orchestrator, rest: str) -> None:
+    query = rest.strip()
+    if not query:
+        print("用法: /track <目标描述，如 每月跟踪贵州茅台>")
+        return
+    planner = Planner()
+    goal = planner.plan_from_query(query, orchestrator.memory)
+    if goal is None:
+        print("无法从描述解析目标")
+        return
+    created = _goal_service(orchestrator).create(goal.title, goal.symbol, cadence_days=goal.cadence_days)
+    sym = created.symbol or "-"
+    print(f"已创建目标: {created.goal_id[:8]} 标的={sym} 周期={created.cadence_days}天")
+
+
+def _handle_goals(orchestrator) -> None:
+    goals = _goal_service(orchestrator).list()
+    if not goals:
+        print("暂无目标")
+        return
+    for g in goals:
+        sym = g.symbol or "-"
+        print(f"{g.goal_id[:8]} [{g.status}] {g.title} 标的={sym} 周期={g.cadence_days}天")
+
+
+def _handle_doctor() -> None:
+    rows, health = doctor_run()
+    for r in rows:
+        print(f"{r['domain']:<12}{r['status']:<12}{r['ms']:>8}  {r['detail']}")
+    print("渠道熔断:")
+    for h in health:
+        print(f"{h['provider']:<16}{h['domain']:<12}{h['state']:<10} fails={h['failures']}")
+
+
+def _handle_stats(orchestrator, rest: str) -> None:
+    from finana.observability import get_metrics
+
+    rng = rest.strip() or "7d"
+    since = None
+    if rng == "today":
+        since = time.time() - 86400
+    elif rng == "7d":
+        since = time.time() - 7 * 86400
+    groups = get_metrics().grouped(since)
+    if not groups:
+        print("暂无指标")
+        return
+    for m in groups:
+        print(f"{m['name']:<28} count={m['count']:<6} avg={m['avg']}")

@@ -65,5 +65,13 @@ def main():
     raise SystemExit(1 if all(r["status"] != "ok" for r in rows) else 0)
 
 
+def run(symbol: str = "600519"):
+    """运行全域探测并返回 (rows, health)，不退出进程。"""
+    from finana.datacore.core import get_datacore
+
+    core = get_datacore()
+    return probe(core, symbol), core.health()
+
+
 if __name__ == "__main__":
     main()
