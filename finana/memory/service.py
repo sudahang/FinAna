@@ -38,11 +38,15 @@ def _instrument_summary(inst: dict) -> str:
 
 
 def _prediction_line(p: dict) -> str:
-    target = "-"
-    if p["target_low"] is not None or p["target_high"] is not None:
-        low = "?" if p["target_low"] is None else p["target_low"]
-        high = "?" if p["target_high"] is None else p["target_high"]
+    low, high = p["target_low"], p["target_high"]
+    if low is not None and high is not None:
         target = f"{low:g}~{high:g}"
+    elif low is not None:
+        target = f"≥{low:g}"
+    elif high is not None:
+        target = f"≤{high:g}"
+    else:
+        target = "-"
     invalidation = "/".join(p["invalidation"]) or "-"
     return (
         f"- {p['direction']} 置信度{p['confidence']:.2f} 目标{target} "
@@ -104,6 +108,21 @@ class MemoryService:
         d["conclusions"] = json.loads(d.pop("conclusions_json"))
         d["price_anchors"] = json.loads(d.pop("price_anchors_json"))
         return d
+
+    def find_symbol_by_name(self, name: str) -> str | None:
+        """按标的名称精确匹配返回代码，不存在时返回 None。"""
+        row = self._conn.execute(
+            "SELECT symbol FROM instrument_memory WHERE name=?", (name,)
+        ).fetchone()
+        return row["symbol"] if row is not None else None
+
+    def find_symbol_by_substring(self, text: str) -> str | None:
+        """返回名称作为子串出现在 text 中的标的代码，不存在时返回 None。"""
+        row = self._conn.execute(
+            "SELECT symbol FROM instrument_memory WHERE name<>'' AND ? LIKE '%'||name||'%' LIMIT 1",
+            (text,),
+        ).fetchone()
+        return row["symbol"] if row is not None else None
 
     def remember_semantic(self, content: str, tags: str = "", trace: str = "") -> int:
         """写入一条语义记忆并返回其行 id。"""

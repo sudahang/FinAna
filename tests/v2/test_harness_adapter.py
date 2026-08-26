@@ -56,10 +56,10 @@ def _adapter(monkeypatch, builders):
 def _sdk_result(final_response="结论", finish_reason="stop", events=None):
     if events is None:
         events = [
-            {"type": "assistant", "data": {"usage": {"inputTokens": 10, "outputTokens": 4}}},
-            {"type": "message", "data": {"usage": {"inputTokens": 5}}},
+            {"type": "assistant/message", "data": {"usage": {"inputTokens": 10, "outputTokens": 4}}},
+            {"type": "assistant/message", "data": {"usage": {"inputTokens": 5}}},
             {"type": "tool", "data": {"usage": {"inputTokens": 999}}},
-            {"type": "assistant"},
+            {"type": "assistant/message"},
         ]
     return SimpleNamespace(final_response=final_response, finish_reason=finish_reason, events=events)
 
@@ -79,7 +79,8 @@ def test_run_success_passthrough_and_usage_summed(monkeypatch):
 
 def test_missing_usage_yields_empty_dict(monkeypatch):
     driver = SimpleNamespace(
-        run=lambda prompt, session_id: _sdk_result(events=[{"type": "assistant"}]), close=lambda: None
+        run=lambda prompt, session_id: _sdk_result(events=[{"type": "assistant/message"}]),
+        close=lambda: None,
     )
     monkeypatch.setattr(HarnessAdapter, "_build_driver", lambda self: driver)
 
@@ -188,3 +189,46 @@ def test_build_driver_npm_without_bin_raises(tmp_path):
         adapter._build_driver()
 
     assert "DSH_NPM_BIN" in str(excinfo.value)
+
+
+def test_build_driver_injects_research_env_and_key(tmp_path, monkeypatch):
+    import deepseek_harness
+
+    from finana.config import Settings
+
+    captured = {}
+
+    class _FakeHarness:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def run(self, prompt, session_id):
+            return SimpleNamespace(final_response="x", finish_reason="stop", events=[])
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(deepseek_harness, "DeepSeekHarness", _FakeHarness)
+    settings = Settings(
+        finana_home=tmp_path,
+        dsh_runtime="wheel",
+        deepseek_api_key="sk-test",
+        deepseek_base_url="https://example",
+    )
+    adapter = HarnessAdapter(settings=settings)
+
+    driver = adapter._build_driver()
+
+    assert isinstance(driver, _FakeHarness)
+    env = captured["env"]
+    assert "DSH_SYSTEM_PROMPT" in env and env["DSH_SYSTEM_PROMPT"]
+    assert env["FINANA_PYTHON"]
+    assert env["FINANA_SKILLS_DIR"].endswith("finana/prompts/skills")
+    assert captured["api_key"] == "sk-test"
+    assert captured["base_url"] == "https://example"
+
+
+def test_harness_unavailable_carries_trace_id():
+    exc = HarnessUnavailable("boom", trace_id="trace-1")
+    assert exc.trace_id == "trace-1"
+    assert "boom" in str(exc)

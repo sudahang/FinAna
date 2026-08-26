@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from finana.config import get_settings
 from finana.datacore.symbols import normalize_symbol
-from finana.harness_adapter import HarnessAdapter
+from finana.harness_adapter import HarnessAdapter, HarnessUnavailable
 from finana.memory.service import MemoryService
 from finana.observability import get_metrics, run_trace
 from finana.prediction.parser import PredictionDraft, parse_prediction
@@ -37,12 +37,16 @@ def resolve_symbol_local(query: str, memory: MemoryService) -> str | None:
     else:
         plain = _CODE_PLAIN_RE.search(query or "")
         raw = plain.group(1) if plain else None
-    if raw is None:
-        return None
-    try:
-        return normalize_symbol(raw)
-    except ValueError:
-        return None
+    if raw is not None:
+        try:
+            return normalize_symbol(raw)
+        except ValueError:
+            return None
+    for seg in re.findall(r"[\u4e00-\u9fa5]{2,}", query or ""):
+        symbol = memory.find_symbol_by_substring(seg)
+        if symbol is not None:
+            return symbol
+    return None
 
 
 class Orchestrator:
@@ -58,7 +62,11 @@ class Orchestrator:
             ctx = self.memory.build_context_block(symbol or "", query)
             sid = session_id or uuid.uuid4().hex
             prompt = (ctx + "\n\n" if ctx else "") + f"用户问题: {query}"
-            outcome = self.adapter.run(prompt, session_id=sid)
+            try:
+                outcome = self.adapter.run(prompt, session_id=sid)
+            except HarnessUnavailable as exc:
+                exc.trace_id = tid
+                raise
 
             response = outcome.final_response
             ok = response is not None and outcome.finish_reason not in ("error", None)

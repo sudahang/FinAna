@@ -70,7 +70,7 @@ def test_once_harness_unavailable_stderr_trace_exit_2(capsys):
     assert excinfo.value.code == 2
     err = capsys.readouterr().err
     assert "分析失败(HarnessUnavailable): harness 连续两次运行失败；最后错误：boom" in err
-    assert re.search(r"trace=[0-9a-f]+", err)
+    assert re.search(r"trace=\S+", err)
 
 
 def test_repl_profile_set_persists_via_real_memory_service(tmp_path, capsys, monkeypatch):

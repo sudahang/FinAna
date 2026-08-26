@@ -3,7 +3,9 @@ from __future__ import annotations
 import sys
 import uuid
 
+from finana.config import get_settings
 from finana.harness_adapter import HarnessUnavailable
+from finana.observability import init_logging
 from finana.orchestrator import AnalysisResult, Orchestrator
 
 _BANNER = "FinAna 投研助手 | 会话 {session_id} | 直接提问开始分析，/help 查看命令，/quit 退出"
@@ -64,6 +66,7 @@ def _prediction_card(prediction, prediction_id: int | None) -> str:
 
 def main(argv: list[str] | None = None, factory=build_orchestrator) -> None:
     tokens = list(sys.argv[1:] if argv is None else argv)
+    init_logging(get_settings())
     orchestrator = factory()
     if "--once" in tokens:
         idx = tokens.index("--once")
@@ -153,4 +156,5 @@ def _handle_profile(orchestrator, rest: str) -> None:
 
 
 def _print_harness_error(exc: HarnessUnavailable) -> None:
-    print(f"分析失败(HarnessUnavailable): {exc} trace={uuid.uuid4().hex}", file=sys.stderr)
+    tid = getattr(exc, "trace_id", "") or "本地未记录"
+    print(f"分析失败(HarnessUnavailable): {exc} trace={tid}", file=sys.stderr)

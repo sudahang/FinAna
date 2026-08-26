@@ -175,6 +175,32 @@ def test_build_context_block_full_sections_within_cap(tmp_path):
     assert all(len(ln[2:]) <= 120 for ln in lines)
 
 
+def test_build_context_block_one_sided_target_does_not_crash(tmp_path):
+    svc = _svc(tmp_path)
+    svc.upsert_instrument("TSLA", name="特斯拉")
+    svc.save_prediction(
+        PredictionDraft(
+            direction="up",
+            confidence=0.7,
+            target_low=100.0,
+            target_high=None,
+            horizon_days=14,
+            invalidation=["跌破90"],
+        ),
+        "TSLA",
+    )
+
+    block = svc.build_context_block("TSLA", "特斯拉走势")
+    assert "≥100" in block
+
+
+def test_find_symbol_by_name(tmp_path):
+    svc = _svc(tmp_path)
+    assert svc.find_symbol_by_name("贵州茅台") is None
+    svc.upsert_instrument("600519.SH", name="贵州茅台")
+    assert svc.find_symbol_by_name("贵州茅台") == "600519.SH"
+
+
 def test_build_context_block_omits_missing_sections(tmp_path):
     svc = _svc(tmp_path)
     svc.remember_semantic("黄金 ETF 配置观点跟踪", tags="商品")

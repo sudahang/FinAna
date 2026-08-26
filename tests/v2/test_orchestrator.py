@@ -133,8 +133,10 @@ def test_harness_unavailable_propagates(tmp_path):
         adapter=_RaisingHarness([_outcome("x")]),
         metrics=_metrics(tmp_path),
     )
-    with pytest.raises(HarnessUnavailable):
+    with pytest.raises(HarnessUnavailable) as excinfo:
         orch.analyze("分析600519")
+    assert excinfo.value.trace_id
+    assert len(excinfo.value.trace_id) >= 16
 
 
 def test_abnormal_finish_uses_fallback_text(tmp_path):
@@ -155,6 +157,27 @@ def test_resolve_symbol_local_codes_and_none(tmp_path):
     assert resolve_symbol_local("600519", mem) == "600519.SH"
     assert resolve_symbol_local("贵州茅台", mem) is None
     assert resolve_symbol_local("000001.SZ", mem) == "000001.SZ"
+
+
+def test_resolve_symbol_local_chinese_name_fallback(tmp_path):
+    mem = _memory(tmp_path)
+    mem.upsert_instrument("600519.SH", name="贵州茅台")
+    assert resolve_symbol_local("分析贵州茅台近期走势", mem) == "600519.SH"
+    assert resolve_symbol_local("随便聊聊", mem) is None
+
+
+def test_chinese_name_query_persists_prediction(tmp_path):
+    mem = _memory(tmp_path)
+    mem.upsert_instrument("600519.SH", name="贵州茅台")
+    orch = Orchestrator(
+        memory=mem,
+        adapter=FakeHarness([_outcome(_prediction_text())]),
+        metrics=_metrics(tmp_path),
+    )
+    result = orch.analyze("分析贵州茅台近期走势")
+    assert result.prediction is not None
+    assert result.prediction_id is not None
+    assert mem.symbol_for_session(result.session_id) == "600519.SH"
 
 
 def test_prompt_includes_context_block_and_user_question(tmp_path):

@@ -1,11 +1,13 @@
 """DeepSeek harness 适配器：懒构建 driver、结果归一化、崩溃重启重试。
 
-DSH_SYSTEM_PROMPT 环境变量由 harness runtime 原样读取，本模块不做注入；
-Task 6/7 负责在启动流程中设置它。
+启动 driver 时注入 DSH_SYSTEM_PROMPT（投研人格 + 预测格式）、FINANA_PYTHON
+（MCP server 解释器绝对路径）、FINANA_SKILLS_DIR（skill 目录），确保真实运行
+携带研究人格与数据工具；这些变量由 SDK 注入子进程环境。
 """
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -26,7 +28,11 @@ class AnalysisOutcome:
 
 
 class HarnessUnavailable(Exception):
-    """harness 重试后仍不可用，message 携带最后一次错误摘要。"""
+    """harness 重试后仍不可用，message 携带最后一次错误摘要，trace_id 可选关联。"""
+
+    def __init__(self, message: str, trace_id: str = ""):
+        super().__init__(message)
+        self.trace_id = trace_id
 
 
 def write_npm_wrapper(home: Path, npm_bin: Path) -> Path:
@@ -43,10 +49,10 @@ def write_npm_wrapper(home: Path, npm_bin: Path) -> Path:
 
 
 def _sum_usage(events) -> dict:
-    """聚合 events 中 assistant/message 事件的 usage 数值字段，缺失返回 {}。"""
+    """聚合 events 中 'assistant/message' 事件的 usage 数值字段，缺失返回 {}。"""
     total: dict = {}
     for event in events:
-        if not isinstance(event, dict) or event.get("type") not in ("assistant", "message"):
+        if not isinstance(event, dict) or event.get("type") != "assistant/message":
             continue
         data = event.get("data")
         if not isinstance(data, dict) or not isinstance(data.get("usage"), dict):
@@ -146,6 +152,16 @@ class HarnessAdapter:
             log.warning("wheel 构建失败，回退 npm：%s", exc)
             return self._build_npm()
 
+    def _build_env(self) -> dict:
+        """注入真实运行必需的子进程环境变量：研究人格、MCP 解释器、skill 目录。"""
+        from finana.prompts.loader import load_system_prompt
+
+        return {
+            "DSH_SYSTEM_PROMPT": load_system_prompt(),
+            "FINANA_PYTHON": sys.executable,
+            "FINANA_SKILLS_DIR": str(self._repo_root() / "finana" / "prompts" / "skills"),
+        }
+
     def _build_wheel(self):
         """通过已安装的 deepseek_harness 包构建驱动。"""
         from deepseek_harness import DeepSeekHarness
@@ -157,6 +173,9 @@ class HarnessAdapter:
             cwd=str(self._workspace_dir()),
             session_root=str(self.settings.sessions_dir.expanduser()),
             cordis=str(self._repo_root() / "cordis.finana.yml"),
+            env=self._build_env(),
+            api_key=self.settings.deepseek_api_key or None,
+            base_url=self.settings.deepseek_base_url or None,
         )
 
     def _build_npm(self):
@@ -177,6 +196,9 @@ class HarnessAdapter:
             session_root=str(self.settings.sessions_dir.expanduser()),
             cordis=str(self._repo_root() / "cordis.finana.yml"),
             runtime_bin=str(wrapper),
+            env=self._build_env(),
+            api_key=self.settings.deepseek_api_key or None,
+            base_url=self.settings.deepseek_base_url or None,
         )
 
 
