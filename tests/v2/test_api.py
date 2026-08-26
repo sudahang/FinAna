@@ -156,3 +156,12 @@ def test_static_index_served(tmp_path):
     resp = client.get("/")
     assert resp.status_code == 200
     assert "FinAna" in resp.text
+
+
+def test_cron_endpoint_runs_scheduler(tmp_path):
+    from finana.api import create_app
+
+    client = TestClient(_app(tmp_path, [_prediction_outcome()], {}))
+    resp = client.post("/api/cron")
+    assert resp.status_code == 200
+    assert "goals_processed" in resp.json() and "predictions_verified" in resp.json()

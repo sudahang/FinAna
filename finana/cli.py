@@ -78,6 +78,12 @@ def main(argv: list[str] | None = None, factory=build_orchestrator) -> None:
             port = int(tokens[1])
         uvicorn.run("finana.api:web_app", host="0.0.0.0", port=port)
         return
+    if tokens and tokens[0] == "cron":
+        from finana.scheduler import Scheduler
+
+        summary = Scheduler().process_due()
+        print(f"调度完成: 目标回访={summary['goals_processed']} 预测验证={summary['predictions_verified']}")
+        return
     orchestrator = factory()
     if "--once" in tokens:
         idx = tokens.index("--once")

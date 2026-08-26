@@ -170,6 +170,13 @@ def create_app(memory: MemoryService | None = None, adapter=None,
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 
+    @app.post("/api/cron")
+    def cron():
+        from finana.scheduler import Scheduler
+
+        summary = Scheduler(memory=memory, adapter=adapter, datacore=datacore).process_due()
+        return summary
+
     return app
 
 
