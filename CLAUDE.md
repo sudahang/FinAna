@@ -391,3 +391,59 @@ python test_ai_agent.py
 | API 模型 | ✅ | FastAPI 请求/响应模型正常 |
 
 **注意**: 输入路由测试需要有效的 DashScope API Key，如果没有配置会显示 API 错误，但核心功能正常。
+
+---
+
+## FinAna v2（重构版）架构
+
+v2 是仓库的重构主线，目标：用户问一只股票，给出相对可靠的趋势判断。v1（下方原文档）已归档为 legacy，不再主维护。
+
+### 核心组件（finana/ 包）
+
+```
+finana/
+├── config.py             # Settings：从环境变量/.env 读取
+├── datacore/             # 真实财经数据层（A股/港股/美股多源 fallback）
+├── harness_adapter.py    # DeepSeek Harness 适配（wheel/npm 双启动、重试、归一化）
+├── prediction/parser.py  # 从模型输出解析 ```json 预测块
+├── memory/service.py     # 四层记忆（标的/语义/画像/会话/预测）+ SQLite+FTS5
+├── prompts/              # system_prompt.md + prediction_format.md + skills/
+├── orchestrator.py       # 单次分析闭环：符号解析→上下文→run→预测落库→报告落盘
+├── goals.py              # L5 目标规划（user_goals 表）
+├── verifier.py           # 到期预测验证，写回 verdict，沉淀语义教训
+├── cli.py                # 交互式 REPL + --once
+├── api.py                # FastAPI：/api/analyze /api/goals /api/verify/run /api/reports
+├── cordis.finana.yml     # DeepSeek Harness 组合（含 mcp-finana stdio 段）
+└── storage/db.py        # SQLite 连接 + schema.sql
+```
+
+### 运行
+
+```bash
+source .venv/bin/activate
+export DEEPSEEK_API_KEY=sk-xxx
+# 安装 harness 运行时（mac-x64 需 npm 模式）
+bash scripts/install-dsh.sh
+export DSH_NPM_BIN="$(node -e "console.log(require('path').resolve('node_modules/@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/packaged-bin.js'))")"
+
+python -m finana.cli --once "分析600519近期走势"   # 单次分析
+python -m finana.cli                                # 交互式
+uvicorn finana.api:app --reload --port 8000         # Web API
+python scripts/smoke_e2e.py                         # 真实 E2E（缺 key 自动 SKIP）
+```
+
+### 测试
+
+```bash
+.venv/bin/python -m pytest tests/v2/ -q            # v2 现行套件（146 项）
+```
+
+### 关键约束
+
+- 所有 DeepSeek Harness 交互隔离在 `harness_adapter.py`；自动化测试用 `FakeHarness` 注入，不构造真实 harness。
+- macOS x86_64 无 runtime-bin 轮子，必须用 npm 模式（packaged-bin.js）。
+- 预测闭环：orchestrator 解析预测 → `predictions` 落库（pending）→ verifier 到期验证 → verdict 写回。
+
+## Legacy（v1）归档
+
+v1 的 `agents/`、`workflows/`、`web_ui/`、`data/`、`llm/`、`api/`、`skills/stock_data_enhanced/` 为旧版实现，保留但不再主维护。详见仓库根 `LEGACY.md`。
