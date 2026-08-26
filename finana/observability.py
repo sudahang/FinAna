@@ -98,6 +98,24 @@ class MetricsService:
             "max": max(vals),
         }
 
+    def grouped(self, since: float | None = None) -> list[dict]:
+        """按指标名聚合：返回每名的 count/avg/最近样本时间。"""
+        if since is None:
+            rows = self.conn.execute(
+                "SELECT name, COUNT(*) AS c, AVG(value) AS a, MAX(ts) AS m "
+                "FROM metrics GROUP BY name ORDER BY name"
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT name, COUNT(*) AS c, AVG(value) AS a, MAX(ts) AS m "
+                "FROM metrics WHERE ts>=? GROUP BY name ORDER BY name",
+                (since,),
+            ).fetchall()
+        return [
+            {"name": r["name"], "count": r["c"], "avg": round(r["a"], 3), "last_ts": r["m"]}
+            for r in rows
+        ]
+
 
 _metrics = None
 

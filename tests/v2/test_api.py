@@ -110,3 +110,49 @@ def test_accuracy_endpoint(tmp_path):
     assert resp.status_code == 200
     assert resp.json()["direction_hit_rate"] == 1.0
     assert client.get("/api/accuracy/NVDA").status_code == 404
+
+
+def test_profile_get_and_put(tmp_path):
+    from finana.api import create_app
+
+    os.environ["FINANA_HOME"] = str(tmp_path / "home")
+    get_settings.cache_clear()
+    client = TestClient(create_app(memory=MemoryService(connect(tmp_path / "finana.db"))))
+    assert client.get("/api/profile").status_code == 200
+    resp = client.put("/api/profile", json={"risk_preference": "进取", "style": "成长股"})
+    assert resp.status_code == 200
+    assert resp.json()["risk_preference"] == "进取"
+
+
+def test_metrics_endpoint(tmp_path):
+    from finana.api import create_app
+    from finana.observability import get_metrics
+
+    os.environ["FINANA_HOME"] = str(tmp_path / "home")
+    get_settings.cache_clear()
+    import finana.observability as obs
+
+    obs._metrics = None
+    get_metrics().record("analysis.latency_ms", 12.5, stage="total")
+    client = TestClient(create_app(memory=MemoryService(connect(tmp_path / "finana.db"))))
+    data = client.get("/api/metrics").json()
+    assert any(m["name"] == "analysis.latency_ms" and m["count"] == 1 for m in data)
+
+
+def test_chat_sse_returns_result(tmp_path):
+    from finana.api import create_app
+
+    client = TestClient(_app(tmp_path, [_prediction_outcome()], {}))
+    resp = client.post("/api/chat", json={"query": "分析600519走势"})
+    assert resp.status_code == 200
+    assert "event: result" in resp.text
+    assert "response_md" in resp.text
+
+
+def test_static_index_served(tmp_path):
+    from finana.api import create_web_app
+
+    client = TestClient(create_web_app(memory=MemoryService(connect(tmp_path / "finana.db"))))
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "FinAna" in resp.text

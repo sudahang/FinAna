@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
+import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from finana.config import get_settings
@@ -25,6 +29,12 @@ class GoalRequest(BaseModel):
 
 class GoalStatusRequest(BaseModel):
     status: str
+
+
+class ProfileRequest(BaseModel):
+    risk_preference: str | None = None
+    style: str | None = None
+    watchlist: list[str] | None = None
 
 
 class VerifyResponse(BaseModel):
@@ -129,7 +139,57 @@ def create_app(memory: MemoryService | None = None, adapter=None,
             raise HTTPException(status_code=404, detail="report not found")
         return {"file": name, "content": path.read_text(encoding="utf-8")}
 
+    @app.get("/api/profile")
+    def get_profile():
+        return memory.get_profile()
+
+    @app.put("/api/profile")
+    def put_profile(req: ProfileRequest):
+        memory.update_profile(**{k: v for k, v in vars(req).items() if v is not None})
+        return memory.get_profile()
+
+    @app.get("/api/metrics")
+    def metrics(range: str | None = None):
+        from finana.observability import get_metrics
+
+        since = None
+        if range == "today":
+            since = time.time() - 86400
+        elif range == "7d":
+            since = time.time() - 7 * 86400
+        return get_metrics().grouped(since)
+
+    @app.post("/api/chat")
+    async def chat(req: AnalyzeRequest):
+        def event_stream():
+            try:
+                result = orchestrator.analyze(req.query, session_id=req.session_id)
+                yield f"event: result\ndata: {json.dumps(_result_to_dict(result), ensure_ascii=False)}\n\n"
+            except Exception as exc:
+                yield f"event: error\ndata: {json.dumps({'detail': str(exc)}, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+    return app
+
+
+def _mount_static(app: FastAPI) -> None:
+    static_dir = Path(__file__).parent / "web" / "static"
+    if static_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+        @app.get("/", response_class=HTMLResponse)
+        def index():
+            return (static_dir / "index.html").read_text(encoding="utf-8")
+
+
+def create_web_app(memory=None, adapter=None, datacore=None) -> FastAPI:
+    """构建并挂载静态前端的完整 Web 应用。"""
+    app = create_app(memory=memory, adapter=adapter, datacore=datacore)
+    _mount_static(app)
     return app
 
 
 app = create_app()
+web_app = create_web_app()
+

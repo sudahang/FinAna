@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FinAna 投研助手</title>
+  <style>
+    body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; max-width: 820px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+    h1 { font-size: 1.4rem; }
+    #box { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; min-height: 200px; white-space: pre-wrap; background: #fafafa; }
+    .row { display: flex; gap: .5rem; margin-top: 1rem; }
+    input { flex: 1; padding: .6rem; border: 1px solid #ccc; border-radius: 6px; }
+    button { padding: .6rem 1.2rem; border: none; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; }
+    .meta { font-size: .8rem; color: #666; margin-top: .5rem; }
+    a { color: #2563eb; }
+  </style>
+</head>
+<body>
+  <h1>FinAna 投研助手</h1>
+  <div id="box">输入股票相关问题开始分析，例如「分析600519近期走势」。</div>
+  <div class="row">
+    <input id="q" placeholder="分析600519近期走势" />
+    <button onclick="ask()">分析</button>
+  </div>
+  <div class="meta" id="meta"></div>
+  <p class="meta">
+    其他接口：
+    <a href="/api/goals">/api/goals</a> ·
+    <a href="/api/metrics">/api/metrics</a> ·
+    <a href="/docs">/docs</a>
+  </p>
+  <script>
+    async function ask() {
+      const q = document.getElementById("q").value.trim();
+      if (!q) return;
+      const box = document.getElementById("box");
+      const meta = document.getElementById("meta");
+      box.textContent = "分析中…";
+      meta.textContent = "";
+      try {
+        const resp = await fetch("/api/analyze", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ query: q }),
+        });
+        const data = await resp.json();
+        box.textContent = data.response_md || JSON.stringify(data);
+        if (data.prediction) {
+          const p = data.prediction;
+          meta.textContent = `预测: ${p.direction} 置信度${p.confidence} 区间${p.target_low}~${p.target_high} 期限${p.horizon_days}天 | trace=${data.trace_id}`;
+        }
+      } catch (e) {
+        box.textContent = "请求失败：" + e;
+      }
+    }
+    document.getElementById("q").addEventListener("keydown", e => { if (e.key === "Enter") ask(); });
+  </script>
+</body>
+</html>

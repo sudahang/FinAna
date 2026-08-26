@@ -67,6 +67,14 @@ def _prediction_card(prediction, prediction_id: int | None) -> str:
 def main(argv: list[str] | None = None, factory=build_orchestrator) -> None:
     tokens = list(sys.argv[1:] if argv is None else argv)
     init_logging(get_settings())
+    if tokens and tokens[0] == "web":
+        import uvicorn
+
+        port = 8000
+        if len(tokens) > 1 and tokens[1].isdigit():
+            port = int(tokens[1])
+        uvicorn.run("finana.api:web_app", host="0.0.0.0", port=port)
+        return
     orchestrator = factory()
     if "--once" in tokens:
         idx = tokens.index("--once")
@@ -161,6 +169,10 @@ def _handle_profile(orchestrator, rest: str) -> None:
 def _print_harness_error(exc: HarnessUnavailable) -> None:
     tid = getattr(exc, "trace_id", "") or "本地未记录"
     print(f"分析失败(HarnessUnavailable): {exc} trace={tid}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
 
 
 def _handle_accuracy(orchestrator, rest: str) -> None:
