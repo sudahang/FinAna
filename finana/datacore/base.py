@@ -139,3 +139,64 @@ class DomainRouter:
                 log.warning("provider failed domain=%s provider=%s err=%s", domain, provider.name, e)
                 get_metrics().record(f"datacore.{domain}.{provider.name}.errors", 1)
         raise DataUnavailable(domain, attempts)
+
+    def dispatch_aggregate(
+        self,
+        domain: str,
+        method: str,
+        *args,
+        cache: TTLCache | None = None,
+        cache_ttl: float | None = None,
+    ):
+        """遍历所有渠道调用 method，合并列表结果并按标题/名称去重（聚合多源）。
+
+        单个渠道失败不影响其他渠道；全部失败才抛 DataUnavailable。
+        适用于新闻、板块列表等「越多越好」的列表型数据域。
+        """
+        cache_key = (domain, method, args, "agg")
+        if cache is not None:
+            hit = cache.get(cache_key)
+            if hit is not None:
+                return hit
+        merged: list = []
+        seen: set[str] = set()
+        attempts: list[str] = []
+        any_ok = False
+        for provider in self.chain(domain):
+            br = self._breaker((domain, provider.name))
+            if not br.allow():
+                attempts.append(f"{provider.name}:skip(open)")
+                continue
+            t0 = time.monotonic()
+            try:
+                result = getattr(provider, method)(*args)
+                elapsed_ms = (time.monotonic() - t0) * 1000
+                br.record_success()
+                get_metrics().record(f"datacore.{domain}.{provider.name}.latency_ms", elapsed_ms, method=method)
+                if isinstance(result, list):
+                    for item in result:
+                        key = _agg_key(item)
+                        if key and key not in seen:
+                            seen.add(key)
+                            merged.append(item)
+                any_ok = True
+            except Exception as e:
+                br.record_failure(e)
+                attempts.append(f"{provider.name}:{type(e).__name__}")
+                log.warning("provider failed domain=%s provider=%s err=%s", domain, provider.name, e)
+                get_metrics().record(f"datacore.{domain}.{provider.name}.errors", 1)
+        if not any_ok:
+            raise DataUnavailable(domain, attempts)
+        if cache is not None:
+            cache.put(cache_key, merged, cache_ttl)
+        return merged
+
+
+def _agg_key(item) -> str:
+    """为聚合去重生成稳定键：优先标题/名称/代码，否则取整体字符串。"""
+    if isinstance(item, dict):
+        for k in ("title", "name", "code", "symbol"):
+            v = item.get(k)
+            if v:
+                return str(v).strip().lower()
+    return str(item).strip().lower()

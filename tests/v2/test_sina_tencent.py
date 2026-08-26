@@ -49,3 +49,17 @@ def test_kline_from_tencent(requests_mock):
     requests_mock.get(TX_KLINE_URL, text=body)
     k = SinaTencentProvider().get_kline("600519.SH", period="d", count=3)
     assert len(k.bars) == 3 and k.bars[-1].close == 1525.6
+
+
+def test_news_from_sina(requests_mock):
+    from finana.datacore.providers.sina_tencent import SINA_ROLL, SinaTencentProvider
+
+    payload = {"result": {"list": [
+        {"title": "茅台发布中期业绩", "time": "1693036800", "url": "https://news1"},
+        {"title": "", "time": "1693036800", "url": "https://skip"},  # 空标题被忽略
+        {"title": "央行下调准备金率", "time": "1693123200", "url": "https://news2"},
+    ]}}
+    requests_mock.get(SINA_ROLL, json=payload)
+    news = SinaTencentProvider().get_news("600519.SH", limit=3)
+    assert [n["title"] for n in news] == ["茅台发布中期业绩", "央行下调准备金率"]
+    assert news[0]["date"].startswith("20") and news[0]["url"] == "https://news1"

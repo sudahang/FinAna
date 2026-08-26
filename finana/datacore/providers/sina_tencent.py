@@ -3,11 +3,12 @@
 import json
 import time
 
-from finana.datacore.http import fetch_text
+from finana.datacore.http import fetch_json, fetch_text
 from finana.datacore.models import Bar, KLine, Quote
 from finana.datacore.symbols import to_sina_code
 
 SINA_HEADERS = {"Referer": "https://finance.sina.com.cn"}
+SINA_ROLL = "https://feed.mix.sina.com.cn/api/roll/get"
 TX_KLINE_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
 
 
@@ -55,3 +56,26 @@ class SinaTencentProvider:
         bars = [Bar(r[0], float(r[1]), float(r[3]), float(r[4]), float(r[2]),
                     float(r[5]), 0.0) for r in rows]
         return KLine(symbol=sym, period=period, bars=bars[-count:], source=self.name)
+
+    def get_news(self, sym: str, limit: int = 10) -> list[dict]:
+        """获取新浪财经滚动新闻（市场级），与东财个股新闻聚合为统一 feed。
+
+        新浪按股票代码过滤的接口不稳定，此处取市场级滚动要闻作为补充源；
+        聚合层会对标题去重，东财个股新闻优先、新浪市场新闻补位。
+        """
+        data = fetch_json(SINA_ROLL, params={
+            "pageid": "153", "lid": "2513", "num": limit, "r": round(time.time(), 3),
+        })
+        items = (data.get("result") or {}).get("data") or (data.get("result") or {}).get("list") or []
+        out = []
+        for it in items:
+            title = (it.get("title") or "").strip()
+            if not title:
+                continue
+            ts = it.get("ctime") or it.get("time") or it.get("date")
+            try:
+                date = time.strftime("%Y-%m-%d %H:%M", time.localtime(float(ts)))
+            except (TypeError, ValueError):
+                date = str(ts) if ts else ""
+            out.append({"title": title, "date": date, "url": it.get("url") or ""})
+        return out
