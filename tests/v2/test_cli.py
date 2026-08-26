@@ -179,3 +179,31 @@ def test_render_result_prediction_card_marks_new_without_id():
     assert text.startswith("正文")
     assert "ID: new" in text
     assert text.count("│") >= 8
+
+
+def test_accuracy_command_prints_stats(tmp_path, capsys):
+    from finana.cli import _handle_accuracy
+    from finana.memory.service import MemoryService
+    from finana.storage.db import connect
+
+    memory = MemoryService(connect(tmp_path / "finana.db"))
+    memory.save_prediction(
+        PredictionDraft(direction="up", confidence=0.8, target_low=100.0, target_high=120.0,
+                        horizon_days=30, invalidation=[]), "TSLA")
+    memory.record_verdict(1, {"direction_hit": True, "range_hit": True,
+                              "current_price": 110.0, "note": "ok"})
+    fake = FakeOrchestrator(memory=memory)
+    _handle_accuracy(fake, "TSLA")
+    out = capsys.readouterr().out
+    assert "方向命中率" in out and "样本=1" in out
+
+
+def test_accuracy_command_no_data(tmp_path, capsys):
+    from finana.cli import _handle_accuracy
+    from finana.memory.service import MemoryService
+    from finana.storage.db import connect
+
+    memory = MemoryService(connect(tmp_path / "finana.db"))
+    fake = FakeOrchestrator(memory=memory)
+    _handle_accuracy(fake, "TSLA")
+    assert "暂无已验证预测" in capsys.readouterr().out

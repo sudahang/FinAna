@@ -116,6 +116,9 @@ def _repl(orchestrator, session_id: str) -> int:
         if line.startswith("/profile"):
             _handle_profile(orchestrator, line[len("/profile") :].strip())
             continue
+        if line.startswith("/accuracy"):
+            _handle_accuracy(orchestrator, line[len("/accuracy") :].strip())
+            continue
         if line.startswith("/"):
             print(f"未知命令: {line} (/help 查看可用命令)")
             continue
@@ -158,3 +161,18 @@ def _handle_profile(orchestrator, rest: str) -> None:
 def _print_harness_error(exc: HarnessUnavailable) -> None:
     tid = getattr(exc, "trace_id", "") or "本地未记录"
     print(f"分析失败(HarnessUnavailable): {exc} trace={tid}", file=sys.stderr)
+
+
+def _handle_accuracy(orchestrator, rest: str) -> None:
+    symbol = rest.strip() or None
+    stats = orchestrator.memory.accuracy_stats(symbol)
+    if stats["total"] == 0:
+        print(f"暂无已验证预测（symbol={stats['symbol']}）")
+        return
+    rate = f"{stats['direction_hit_rate'] * 100:.1f}%"
+    conf = f"{stats['avg_confidence']:.2f}" if stats["avg_confidence"] is not None else "-"
+    print(
+        f"命中率统计[symbol={stats['symbol']}]: "
+        f"样本={stats['total']} 方向命中={stats['direction_hits']} "
+        f"方向命中率={rate} 平均置信度={conf}"
+    )

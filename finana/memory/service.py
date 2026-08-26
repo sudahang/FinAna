@@ -263,6 +263,39 @@ class MemoryService:
             )
         self._conn.commit()
 
+    def accuracy_stats(self, symbol: str | None = None) -> dict:
+        """汇总已验证预测的命中率与平均置信度。"""
+        if symbol:
+            rows = self._conn.execute(
+                "SELECT verdict, confidence FROM predictions WHERE status='verified' AND symbol=?",
+                (symbol,),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT verdict, confidence FROM predictions WHERE status='verified'"
+            ).fetchall()
+        total = len(rows)
+        if total == 0:
+            return {"symbol": symbol or "all", "total": 0,
+                    "direction_hit_rate": None, "avg_confidence": None}
+        hits = 0
+        conf_sum = 0.0
+        conf_n = 0
+        for r in rows:
+            v = json.loads(r["verdict"])
+            if v.get("direction_hit") is True:
+                hits += 1
+            if r["confidence"] is not None:
+                conf_sum += r["confidence"]
+                conf_n += 1
+        return {
+            "symbol": symbol or "all",
+            "total": total,
+            "direction_hits": hits,
+            "direction_hit_rate": hits / total,
+            "avg_confidence": (conf_sum / conf_n) if conf_n else None,
+        }
+
     def build_context_block(self, symbol: str, user_query: str) -> str:
         """组装带 L2/L3/L4 标注的记忆上下文块，整体不超过 1200 字符。"""
         sections: list[str] = []

@@ -201,6 +201,29 @@ def test_find_symbol_by_name(tmp_path):
     assert svc.find_symbol_by_name("贵州茅台") == "600519.SH"
 
 
+def test_accuracy_stats_aggregates_verified(tmp_path):
+    svc = _svc(tmp_path)
+    svc.save_prediction(
+        PredictionDraft(direction="up", confidence=0.8, target_low=100.0, target_high=120.0,
+                        horizon_days=30, invalidation=[]), "TSLA")
+    svc.save_prediction(
+        PredictionDraft(direction="up", confidence=0.6, target_low=100.0, target_high=120.0,
+                        horizon_days=30, invalidation=[]), "TSLA")
+    svc.record_verdict(1, {"direction_hit": True, "range_hit": True, "current_price": 110.0, "note": "x"})
+    svc.record_verdict(2, {"direction_hit": False, "range_hit": False, "current_price": 90.0, "note": "y"})
+
+    all_stats = svc.accuracy_stats()
+    assert all_stats["total"] == 2
+    assert all_stats["direction_hits"] == 1
+    assert abs(all_stats["direction_hit_rate"] - 0.5) < 1e-9
+    assert abs(all_stats["avg_confidence"] - 0.7) < 1e-9
+
+    tsla = svc.accuracy_stats("TSLA")
+    assert tsla["total"] == 2
+
+    assert svc.accuracy_stats("NVDA")["total"] == 0
+
+
 def test_build_context_block_omits_missing_sections(tmp_path):
     svc = _svc(tmp_path)
     svc.remember_semantic("黄金 ETF 配置观点跟踪", tags="商品")

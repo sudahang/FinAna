@@ -100,6 +100,13 @@ def create_app(memory: MemoryService | None = None, adapter=None,
         verdicts = Verifier().run_due(_datacore(), memory, now=now)
         return VerifyResponse(verified=len(verdicts), results=[vars(v) for v in verdicts])
 
+    @app.get("/api/accuracy/{symbol}")
+    def accuracy(symbol: str | None = None):
+        stats = memory.accuracy_stats(symbol)
+        if stats["total"] == 0:
+            raise HTTPException(status_code=404, detail="no verified predictions")
+        return stats
+
     @app.get("/api/reports")
     def list_reports(symbol: str | None = None):
         reports_dir = settings.finana_home.expanduser() / "reports"

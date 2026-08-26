@@ -90,3 +90,23 @@ def test_verify_run_endpoint(tmp_path):
     assert resp.status_code == 200
     assert resp.json()["verified"] == 1
     assert resp.json()["results"][0]["direction_hit"] is True
+
+
+def test_accuracy_endpoint(tmp_path):
+    from finana.api import create_app
+
+    conn = connect(tmp_path / "finana.db")
+    memory = MemoryService(conn)
+    memory.save_prediction(
+        PredictionDraft(direction="up", confidence=0.8, target_low=200.0, target_high=260.0,
+                        horizon_days=30, invalidation=[]), "TSLA")
+    memory.record_verdict(1, {"direction_hit": True, "range_hit": True,
+                              "current_price": 230.0, "note": "ok"})
+
+    os.environ["FINANA_HOME"] = str(tmp_path / "home")
+    get_settings.cache_clear()
+    client = TestClient(create_app(memory=memory))
+    resp = client.get("/api/accuracy/TSLA")
+    assert resp.status_code == 200
+    assert resp.json()["direction_hit_rate"] == 1.0
+    assert client.get("/api/accuracy/NVDA").status_code == 404
