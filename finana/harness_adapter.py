@@ -71,6 +71,7 @@ class HarnessAdapter:
     def __init__(self, settings=None):
         self.settings = settings or get_settings()
         self.driver = None
+        self._force_npm = False
 
     def run(self, prompt: str, session_id: str) -> AnalysisOutcome:
         """执行一次运行；error/None finish_reason 或异常时重启重试一次，仍失败抛 HarnessUnavailable。"""
@@ -79,12 +80,14 @@ class HarnessAdapter:
             try:
                 if self.driver is None:
                     self.driver = self._build_driver()
-                outcome = self._normalize(self.driver.run(prompt, session_id), session_id)
+                outcome = self._normalize(self.driver.run(prompt, session_id=session_id), session_id)
             except HarnessUnavailable:
                 raise
             except Exception as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
                 log.warning("attempt %s failed: %s", attempt, last_error)
+                if "runtime" in str(exc).lower() and not self._force_npm:
+                    self._force_npm = True
                 self._record(finish_reason="exception")
                 self._restart()
                 continue
@@ -140,9 +143,13 @@ class HarnessAdapter:
         return workspace
 
     def _build_driver(self):
-        """按 settings.dsh_runtime 分派构建 wheel/npm 驱动，auto 先 wheel 后 npm。"""
+        """按 settings.dsh_runtime 分派构建 wheel/npm 驱动，auto 先 wheel 后 npm。
+
+        auto 模式下若 wheel 运行时缺失（mac-x64 无 runtime-bin 轮子），首次运行触发
+        FileNotFoundError 后会置 _force_npm，自动改走 npm 模式重试。
+        """
         runtime = self.settings.dsh_runtime
-        if runtime == "npm":
+        if runtime == "npm" or (runtime == "auto" and self._force_npm):
             return self._build_npm()
         if runtime == "wheel":
             return self._build_wheel()

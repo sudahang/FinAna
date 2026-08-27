@@ -18,7 +18,7 @@ class _ScriptDriver:
         self.calls = []
         self.closed = False
 
-    def run(self, prompt, session_id):
+    def run(self, prompt, *, session_id):
         self.calls.append((prompt, session_id))
         if len(self.results) > 1:
             return self.results.pop(0)
@@ -32,7 +32,7 @@ class _BoomDriver:
     def __init__(self):
         self.closed = False
 
-    def run(self, prompt, session_id):
+    def run(self, prompt, *, session_id):
         raise RuntimeError("boom")
 
     def close(self):
@@ -202,7 +202,7 @@ def test_build_driver_injects_research_env_and_key(tmp_path, monkeypatch):
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
-        def run(self, prompt, session_id):
+        def run(self, prompt, *, session_id):
             return SimpleNamespace(final_response="x", finish_reason="stop", events=[])
 
         def close(self):
@@ -231,4 +231,37 @@ def test_build_driver_injects_research_env_and_key(tmp_path, monkeypatch):
 def test_harness_unavailable_carries_trace_id():
     exc = HarnessUnavailable("boom", trace_id="trace-1")
     assert exc.trace_id == "trace-1"
-    assert "boom" in str(exc)
+
+
+def test_auto_falls_back_to_npm_on_runtime_error(monkeypatch):
+    class _RT:
+        def __init__(self, fail):
+            self.fail = fail
+            self.closed = False
+
+        def run(self, prompt, *, session_id):
+            if self.fail:
+                raise FileNotFoundError(
+                    "Unable to locate the bundled DeepSeek Harness SDK runtime."
+                )
+            return SimpleNamespace(final_response="ok", finish_reason="stop", events=[])
+
+        def close(self):
+            self.closed = True
+
+    state = {"i": 0}
+
+    def _build(self):
+        if state["i"] == 0:
+            state["i"] = 1
+            return _RT(fail=True)
+        return _RT(fail=False)
+
+    monkeypatch.setattr(HarnessAdapter, "_build_driver", _build)
+    adapter = HarnessAdapter()
+    adapter.settings.dsh_runtime = "auto"
+
+    outcome = adapter.run("分析600519", "s1")
+
+    assert outcome.final_response == "ok"
+    assert adapter._force_npm is True

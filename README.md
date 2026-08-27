@@ -108,7 +108,8 @@ Harness 提供 **wheel（默认）** 与 **npm（mac-x64 必须）** 两种运�
 # 安装 npm 运行时（幂等，可重复执行）
 bash scripts/install-dsh.sh
 
-# macOS x86_64 必须用 npm 模式，指定可执行入口：
+# macOS x86_64 无 runtime-bin 轮子：安装后设置 DSH_NPM_BIN 即可，
+# DSH_RUNTIME=auto 会自动回退到 npm 模式（无需手动改为 npm）：
 export DSH_NPM_BIN="$(node -e "console.log(require('path').resolve('node_modules/@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/packaged-bin.js'))")"
 ```
 
@@ -116,7 +117,7 @@ export DSH_NPM_BIN="$(node -e "console.log(require('path').resolve('node_modules
 
 ```bash
 export DEEPSEEK_API_KEY=sk-xxxx          # 必填
-export DSH_RUNTIME=auto                  # auto: 先 wheel 后 npm；mac-x64 设为 npm
+export DSH_RUNTIME=auto                  # auto: wheel 优先，缺失 runtime-bin 时自动回退 npm
 # 可选：FINANA_HOME 默认 ~/.finana（存数据库/报告/日志）
 ```
 
@@ -157,8 +158,8 @@ REPL 斜杠命令：
 ### Web API 与界面
 
 ```bash
-# 方式一：uvicorn
-uvicorn finana.api:app --reload --port 8000
+# 方式一：uvicorn（web_app 含静态界面；若只需 API 可用 finana.api:app）
+uvicorn finana.api:web_app --reload --port 8000
 # 方式二（等价）：CLI 启动 web
 python -m finana.cli web 8000
 ```
