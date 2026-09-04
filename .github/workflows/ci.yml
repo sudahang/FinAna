@@ -10,6 +10,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,25 +26,13 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Compile Python modules
-        run: python -m compileall agents api data llm memory storage users web_ui workflows tests
+        run: python -m compileall finana tests scripts
 
       - name: Run unit tests
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: >
-          pytest
-          tests/test_schemas.py
-          tests/test_workflow_contracts.py
-          tests/test_agents.py
-          tests/test_api.py
-          tests/test_users.py
-          tests/test_users_api.py
-          -m "not llm and not external_api"
-          --cov=agents
-          --cov=api
-          --cov=data
-          --cov=memory
-          --cov=storage
-          --cov=users
-          --cov=workflows
+          pytest tests/v2
+          -q
+          --cov=finana
           --cov-report=term-missing

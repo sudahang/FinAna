@@ -71,7 +71,3 @@ class Scheduler:
     def stop(self) -> None:
         """停止后台线程。"""
         self._stop = True
-
-
-def _scheduler_process_once() -> dict:
-    return Scheduler().process_due()

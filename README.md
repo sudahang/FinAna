@@ -93,23 +93,27 @@ git clone <repo> && cd FinAna
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-# 说明：
-#   deepseek-harness-sdk 需 --pre 安装；macOS x86_64 无 runtime-bin 轮子时：
-#     pip install --no-deps deepseek-harness-sdk==0.1.1rc1
 # 可选增强（缺失自动降级，不影响核心）：
 #     pip install "akshare" "curl_cffi>=0.7"
 ```
+
+> `requirements.txt` **不含** `deepseek-harness-sdk`：它依赖的
+> `deepseek-harness-runtime-bin` 在 PyPI 上没有可用发行版，装它会直接让依赖解析失败。
+> SDK 需单独按下一节安装。
 
 ### 2. 安装 DeepSeek Harness 运行时
 
 Harness 提供 **wheel（默认）** 与 **npm（mac-x64 必须）** 两种运行模式：
 
 ```bash
-# 安装 npm 运行时（幂等，可重复执行）
+# 1) Python SDK —— 必须 --no-deps：其 runtime-bin 依赖在 PyPI 上无发行版，带依赖装会解析失败
+pip install --no-deps deepseek-harness-sdk==0.1.1rc1
+
+# 2) 安装 npm 运行时（幂等，可重复执行）
 bash scripts/install-dsh.sh
 
-# macOS x86_64 无 runtime-bin 轮子：安装后设置 DSH_NPM_BIN 即可，
-# DSH_RUNTIME=auto 会自动回退到 npm 模式（无需手动改为 npm）：
+# 3) 指定 npm 入口。DSH_RUNTIME=auto 时 wheel 运行时缺失会自动回退到 npm 模式，
+#    无需手动改为 npm：
 export DSH_NPM_BIN="$(node -e "console.log(require('path').resolve('node_modules/@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/packaged-bin.js'))")"
 ```
 
@@ -250,8 +254,11 @@ finana/
 ├── doctor.py           # 取数渠道健康探测
 ├── prompts/            # system_prompt / prediction_format / skills
 ├── web/static/         # 静态界面
-├── storage/db.py       # SQLite + schema.sql
-└── cordis.finana.yml   # DeepSeek Harness 组合（含 mcp-finana 段）
+└── storage/db.py       # SQLite + schema.sql
+
+cordis.finana.yml       # 仓库根：DeepSeek Harness 组合（含 mcp-finana 段）
+tests/v2/               # 现行 pytest 套件
+scripts/                # install-dsh.sh（harness 运行时）、smoke_e2e.py
 ```
 
 ---

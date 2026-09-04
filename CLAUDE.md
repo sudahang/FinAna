@@ -2,448 +2,98 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## 项目概述
 
-FinAna 是一个基于多智能体协作和真实 AI 大模型的自动化投资研究分析系统。用户输入自然语言查询（如"分析特斯拉股票的未来走势"），系统通过四个 AI 智能体协作生成专业投研报告。
+FinAna v2 是个股趋势研判系统：用户问一只股票，系统拉取真实行情/财务/新闻/资金数据，交由 DeepSeek Harness 自主调研生成研判报告，并解析出**可被未来验证的趋势预测**，到期自动回测命中率，沉淀为语义教训。
+
+v1（DashScope + LangGraph 固定管线的多智能体版本）已从仓库移除，历史保留在 git 记录中。
 
 ## 快速启动
 
 ```bash
-# 激活虚拟环境
 source venv/bin/activate
+export DEEPSEEK_API_KEY=sk-xxx
 
-# 设置 PYTHONPATH
-export PYTHONPATH=/home/sudahang/Documents/github/FinAna
+python -m finana.cli --once "分析600519近期走势"   # 单次分析
+python -m finana.cli                                # 交互式 REPL
+python -m finana.doctor --symbol 600519             # 取数渠道自检
+uvicorn finana.api:web_app --reload --port 8000     # Web API + 静态页
+python -m finana.cli cron                           # 处理到期目标与预测
+python -m finana.mcp_server.server                  # MCP 工具服务（stdio）
+```
 
-# 运行测试
-pytest -v
+## 测试
 
-# 启动 Web UI
-python -m web_ui.app
-# 访问 http://localhost:7860
-
-# 启动 API 服务
-uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
-# 访问 http://localhost:8000/docs
-
-# 测试 AI Agent
-python test_ai_agent.py
+```bash
+pytest                       # 默认跑 tests/v2（见 pytest.ini）
+pytest tests/v2 -q --cov=finana
+python scripts/smoke_e2e.py  # 真实 E2E，缺 key 自动 SKIP
 ```
 
 ## 技术栈
 
-- **LLM**: DashScope Qwen3.5-plus (`https://coding.dashscope.aliyuncs.com/v1`)
-- **后端**: FastAPI + Pydantic
-- **前端**: Gradio (v6.0, 现代化 UI 设计)
-- **数据源**: 新浪财经 (行情/新闻)、东方财富 (行业/财务数据)
+- **Agent 运行时**：DeepSeek Harness（`cordis.finana.yml` 组合驱动）
+- **后端**：FastAPI + Pydantic / pydantic-settings
+- **数据**：东方财富（主）+ 新浪/腾讯 + AKShare + Alltick，多源 failover + 聚合去重
+- **存储**：SQLite + FTS5（`~/.finana/finana.db`）
+- **工具暴露**：fastmcp（`mcp-finana`，stdio 供 Harness 调用）
 
 ## 项目结构
 
 ```
-FinAna/
-├── agents/                     # AI 智能体
-│   ├── macro_analyst_ai.py     # 宏观经济分析师 (AI)
-│   ├── industry_analyst_ai.py  # 行业分析师 (AI)
-│   ├── equity_analyst_ai.py    # 个股分析师 (AI)
-│   └── report_synthesizer_ai.py # 报告合成器 (AI)
-├── workflows/                  # 工作流编排
-│   └── langgraph_workflow.py   # LangGraph AI 投研工作流
-├── data/                       # 数据层
-│   ├── schemas.py              # Pydantic 数据模型
-│   └── finance_data.py         # 真实财经数据获取
-├── llm/                        # 大模型模块
-│   └── client.py               # DashScope API 客户端
-├── api/                        # API 服务
-│   ├── main.py                 # FastAPI 应用
-│   └── routers/analysis.py     # 分析端点
-├── web_ui/                     # Web 界面
-│   └── app.py                  # Gradio 应用 (现代设计)
-├── skills/                     # 技能模块
-│   └── stock_data_enhanced/    # 股票数据增强 skill
-│       ├── stock_data.py       # 核心实现 (A 股/港股/美股)
-│       ├── SKILL.md            # Skill 配置
-│       └── test_stock_data.py  # 测试脚本
-├── tests/                      # 单元测试
-├── test_ai_agent.py            # AI Agent 集成测试
-└── requirements.txt            # 依赖
+finana/
+├── config.py             # Settings：环境变量 / .env
+├── datacore/             # 取数层：core(门面) base(熔断/缓存/域路由) http models symbols providers/
+├── harness_adapter.py    # 唯一隔离 DeepSeek Harness 交互的模块
+├── prediction/parser.py  # 解析模型输出的 ```json 预测块
+├── memory/service.py     # 四层记忆 + FTS5 + 命中率
+├── orchestrator.py       # 单次分析闭环
+├── goals.py              # 目标管理（建目标 / 启发式解析 / 到期扫描）
+├── verifier.py           # 到期预测验证，写回 verdict，沉淀语义教训
+├── scheduler.py          # GoalScheduler：到期目标回访 + 预测验证
+├── mcp_server/server.py  # mcp-finana：8 数据工具 + 3 记忆工具
+├── api.py                # FastAPI：/api/analyze /goals /verify/run /accuracy /profile /metrics /chat /cron /reports
+├── cli.py                # REPL + --once + web + cron
+├── doctor.py             # 取数渠道健康探测
+├── observability.py      # 运行指标
+├── prompts/              # system_prompt.md + prediction_format.md + skills/
+├── web/static/           # 静态界面
+└── storage/db.py         # SQLite 连接 + schema.sql
+
+仓库根/
+├── cordis.finana.yml     # Harness 组合（含 mcp-finana 段），由 harness_adapter 按仓库根解析
+├── tests/v2/             # 现行 pytest 套件
+└── scripts/              # install-dsh.sh（harness 运行时）、smoke_e2e.py
 ```
 
-## AI 智能体协作流程
+## 预测闭环
 
 ```
-用户查询 → MacroAnalystAgent → IndustryAnalystAgent → EquityAnalystAgent → ReportSynthesizerAgent → Markdown 报告
+orchestrator 解析预测 → predictions 落库(pending) → verifier 到期拉真实价 → 写回 verdict → 命中率统计 + 语义教训
 ```
 
-1. **MacroAnalystAgent**: 分析 GDP、CPI、利率等宏观指标
-2. **IndustryAnalystAgent**: 分析行业趋势、竞争格局
-3. **EquityAnalystAgent**: 分析公司基本面、技术指标
-4. **ReportSynthesizerAgent**: 整合所有分析生成完整报告
+## 关键约束
 
-## 关键配置
+- **所有 DeepSeek Harness 交互必须隔离在 `harness_adapter.py`**；自动化测试用 `FakeHarness` 注入，禁止在测试中构造真实 harness。
+- macOS x86_64 无 runtime-bin 轮子，必须走 npm 模式（`DSH_RUNTIME=npm` + `DSH_NPM_BIN` 指向 `packaged-bin.js`）。
+- 取数层新增 provider 需注册到 `datacore/registry.py`，并配 `PROVIDER_ORDER`。
+- 缺 API Key 时真实 E2E 必须自动跳过，不得让 CI 失败。
 
-### LLM 配置 (`llm/client.py`)
-```python
-class DashScopeConfig(BaseModel):
-    api_key: str
-    base_url: str = "https://coding.dashscope.aliyuncs.com/v1"
-    model: str = "qwen3.5-plus"
-    max_tokens: int = 2048
-    temperature: float = 0.7
-    timeout: int = 30  # 超时设置
-```
+## 配置（环境变量）
 
-### 环境变量 (`.env`)
-```bash
-DASHSCOPE_API_KEY=sk-your-api-key
-DASHSCOPE_MODEL=qwen3.5-plus
-```
-
-### 支持的股票
-- **美股**: TSLA, NVDA, AAPL, MSFT, GOOGL, AMZN, META
-- 通过 `company_mapping` 自动识别中英文公司名称
-
-## 测试
-
-```bash
-# 运行所有测试
-pytest -v
-
-# AI Agent 集成测试 (6 项测试)
-python test_ai_agent.py
-# - LLM 客户端连接
-# - 财经数据获取
-# - 宏观分析师 AI
-# - 行业分析师 AI
-# - 个股分析师 AI
-# - 完整工作流
-
-# Stock Data Enhanced Skill 测试
-python skills/stock_data_enhanced/test_stock_data.py
-```
-
-## Stock Data Enhanced Skill
-
-查询上市公司信息的增强版技能，支持 A 股、港股、美股，使用多数据源 fallback。
-
-### 数据源
-- **A 股**: 新浪财经 HTTP (快速，单只股票) → 腾讯财经 HTTP (备用)
-- **港股**: 新浪财经 HTTP (快速，单只股票) → 腾讯财经 HTTP (备用)
-- **美股**: yfinance (Yahoo Finance) → Finnhub (60次/分钟) → Alpha Vantage (25次/天)
-- **历史数据**: AKShare (快速稳定)
-
-### 使用示例
-
-```python
-from skills.stock_data_enhanced.stock_data import (
-    get_stock_quote,        # 获取实时行情
-    get_company_info,       # 获取公司信息
-    get_history,            # 获取历史 K 线
-    get_stock_news          # 获取股票新闻
-)
-
-# 获取行情 (A 股需要市场前缀)
-quote = get_stock_quote("sh600519")  # 贵州茅台
-quote = get_stock_quote("HK00700")   # 腾讯控股
-quote = get_stock_quote("TSLA")      # 特斯拉
-
-# 获取公司信息
-info = get_company_info("sh600519")
-
-# 获取历史 K 线
-klines = get_stock_history("sh600519", period="d")
-
-# 获取新闻
-news_list = get_stock_news("sh600519", limit=10)
-```
-
-### 支持的股票市场
-| 市场 | 代码格式 | 示例 |
-|------|----------|------|
-| 上交所 | sh + 6 位 | sh600519 |
-| 深交所 | sz + 6 位 | sz000001 |
-| 港股 | HK + 5 位 | HK00700 |
-| 美股 | Ticker | TSLA |
-```
+| 变量 | 说明 | 默认 |
+|------|------|------|
+| `DEEPSEEK_API_KEY` | DeepSeek API Key（必填） | — |
+| `DSH_MODEL` | Harness 模型 | `deepseek-v4-flash` |
+| `DSH_RUNTIME` | `auto` / `wheel` / `npm` | `auto` |
+| `DSH_NPM_BIN` | npm 模式入口（mac-x64 必填） | — |
+| `FINANA_HOME` | 主目录（库/报告/日志） | `~/.finana` |
+| `PROVIDER_ORDER` | 数据 provider 顺序 | `eastmoney,sina_tencent,akshare,alltick` |
+| `ALLTICK_TOKEN` | Alltick 令牌（美股/港股） | — |
+| `LOG_LEVEL` / `HTTP_TIMEOUT` | 日志级别 / 取数超时（秒） | `INFO` / `10` |
 
 ## 开发注意事项
 
-- **超时处理**: API timeout 设为 30 秒，fallback 机制处理超时
-- **队列支持**: Gradio 使用 `demo.queue(max_size=10)` 处理长任务
-- **进度显示**: `show_progress="full"` 显示加载指示器
-- **错误处理**: 区分超时错误和其他 API 错误，显示友好提示
-
-## 多轮对话功能
-
-系统支持多轮对话，保留对话历史和上下文，允许用户进行连续追问。
-
-### 对话记忆架构
-
-```
-memory/
-├── __init__.py                  # 模块导出
-└── conversation_memory.py       # 对话记忆管理
-```
-
-### 核心组件
-
-1. **ConversationMemory**: 会话管理器
-   - 基于 session_id 管理对话
-   - 自动清理过期会话 (TTL: 1 小时)
-   - LRU 淘汰机制 (默认最多 1000 个会话)
-
-2. **ConversationSession**: 单个会话
-   - 存储消息历史
-   - 存储上下文数据 (股票、国家、行业等)
-
-3. **Message**: 单条消息
-   - 角色 (user/assistant)
-   - 内容、时间戳、元数据
-
-### API 端点
-
-| 端点 | 方法 | 描述 |
-|------|------|------|
-| `/analysis/chat` | POST | 聊天端点，支持 session_id 和 history |
-| `/analysis/session/{id}` | GET | 获取会话信息 |
-| `/analysis/session/{id}/history` | GET | 获取会话历史 |
-| `/analysis/session/{id}` | DELETE | 清除会话 |
-
-### 使用示例
-
-```python
-from memory.conversation_memory import get_conversation_memory
-from workflows.langgraph_workflow import AIResearchWorkflow
-
-# 获取对话记忆
-memory = get_conversation_memory()
-
-# 创建会话
-session_id = memory.create_session()
-
-# 第一轮对话
-workflow = AIResearchWorkflow()
-report1 = workflow.execute("分析特斯拉", session_id=session_id)
-
-# 第二轮对话 (带历史)
-history = memory.get_history(session_id)
-report2 = workflow.execute(
-    "它的估值合理吗？",
-    session_id=session_id,
-    conversation_history=history
-)
-
-# 获取存储的上下文
-context = memory.get_context(session_id)
-# {'symbol': 'TSLA', 'country': 'us', 'sector': '汽车', ...}
-```
-
-### Web UI
-
-启动 Web UI 后，访问 **💬 多轮对话** 标签页体验对话功能：
-
-```bash
-python -m web_ui.app
-```
-
-支持的操作：
-- 连续追问，系统自动保留上下文
-- 清除对话，开始新话题
-- 撤回上一条消息
-
-### 测试
-
-```bash
-# 测试多轮对话功能
-python test_multi_turn_chat.py
-```
-
-## 报告存储和缓存
-
-系统使用 Redis 和 SeaweedFS 实现报告缓存和持久化存储，提高相似查询的响应速度。
-
-### 架构
-
-```
-storage/
-├── __init__.py              # 模块导出
-├── redis_client.py          # Redis 客户端 (缓存摘要)
-├── seaweed_client.py        # SeaweedFS 客户端 (存储完整报告)
-└── report_cache.py          # 报告缓存服务
-```
-
-### 工作流程
-
-```
-用户查询 → 检查 Redis 缓存 → (未命中) → 执行 AI 分析 → 存储到 SeaweedFS → 缓存摘要到 Redis
-         ↓
-    (命中) → 返回缓存报告
-```
-
-### 启动存储服
-
-```bash
-# 启动 Redis 和 SeaweedFS
-docker-compose up -d
-
-# 验证服务
-docker-compose ps
-
-# 查看日志
-docker-compose logs -f redis
-docker-compose logs -f seaweedfs
-```
-
-### 服务端口
-
-| 服务 | 端口 | 用途 |
-|------|------|------|
-| Redis | 6379 | 缓存摘要和索引 |
-| SeaweedFS Master | 9333 | 集群管理 |
-| SeaweedFS Filer | 8888 | 文件访问 |
-| SeaweedFS Volume | 8080 | 数据卷 |
-
-### 使用示例
-
-```python
-from storage.report_cache import get_report_cache_service
-
-# 获取缓存服务
-cache_service = get_report_cache_service()
-
-# 检查缓存
-cached_report = cache_service.find_cached_report("分析特斯拉")
-if cached_report:
-    print(f"找到缓存报告：{cached_report.recommendation}")
-
-# 缓存新报告
-report_id, success = cache_service.cache_report(
-    report=report,
-    query="分析特斯拉",
-    symbol="TSLA",
-    country="us"
-)
-```
-
-### API 端点
-
-| 端点 | 方法 | 描述 |
-|------|------|------|
-| `/analysis/cache/search?query=xxx` | GET | 搜索相似缓存报告 |
-| `/analysis/cache/report/{id}` | GET | 获取指定缓存报告 |
-| `/analysis/cache/stats` | GET | 获取缓存统计 |
-| `/analysis/cache/clear` | POST | 清除缓存 |
-| `/analysis/cache/health` | GET | 检查缓存健康状态 |
-
-### 配置
-
-```bash
-# 环境变量
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=  # 可选
-
-SEAWEED_FILER_URL=http://localhost:8888
-SEAWEED_MASTER_URL=http://localhost:9333
-
-ENABLE_REPORT_CACHE=true
-REPORT_CACHE_TTL=604800  # 7 天
-```
-
-### 测试
-
-```bash
-# 测试存储和缓存功能
-python test_storage_cache.py
-```
-
-### 缓存策略
-
-- **相似性匹配**: 基于查询哈希和关键词匹配
-- **符号索引**: 按股票代码索引报告
-- **自动过期**: 默认 7 天 TTL
-- **容量限制**: 最多缓存 1000 份报告/符号
-
-## 测试
-
-```bash
-# 运行所有测试 (不依赖外部服务)
-python test_full_workflow.py    # 7/7 测试通过
-python test_storage_mock.py     # 7/7 测试通过
-python test_multi_turn_chat.py  # 多轮对话测试
-
-# 运行真实存储测试 (需要 Docker)
-python test_storage_cache.py
-
-# AI Agent 集成测试 (需要 API Key)
-python test_ai_agent.py
-```
-
-### 测试状态
-
-| 测试项 | 状态 | 说明 |
-|--------|------|------|
-| 模块导入 | ✅ | 所有 Python 模块正常导入 |
-| 对话记忆 | ✅ | 多轮对话记忆功能正常 |
-| 输入路由 | ✅ | 用户查询识别正常 |
-| 工作流初始化 | ✅ | LangGraph 工作流正常 |
-| 存储服务类 | ✅ | Redis/SeaweedFS 客户端正常 |
-| 缓存逻辑 | ✅ | 报告缓存逻辑正常 |
-| API 模型 | ✅ | FastAPI 请求/响应模型正常 |
-
-**注意**: 输入路由测试需要有效的 DashScope API Key，如果没有配置会显示 API 错误，但核心功能正常。
-
----
-
-## FinAna v2（重构版）架构
-
-v2 是仓库的重构主线，目标：用户问一只股票，给出相对可靠的趋势判断。v1（下方原文档）已归档为 legacy，不再主维护。
-
-### 核心组件（finana/ 包）
-
-```
-finana/
-├── config.py             # Settings：从环境变量/.env 读取
-├── datacore/             # 真实财经数据层（A股/港股/美股多源 fallback）
-├── harness_adapter.py    # DeepSeek Harness 适配（wheel/npm 双启动、重试、归一化）
-├── prediction/parser.py  # 从模型输出解析 ```json 预测块
-├── memory/service.py     # 四层记忆（标的/语义/画像/会话/预测）+ SQLite+FTS5
-├── prompts/              # system_prompt.md + prediction_format.md + skills/
-├── orchestrator.py       # 单次分析闭环：符号解析→上下文→run→预测落库→报告落盘
-├── goals.py              # L5 目标规划（user_goals 表）
-├── verifier.py           # 到期预测验证，写回 verdict，沉淀语义教训
-├── cli.py                # 交互式 REPL + --once
-├── api.py                # FastAPI：/api/analyze /api/goals /api/verify/run /api/reports
-├── cordis.finana.yml     # DeepSeek Harness 组合（含 mcp-finana stdio 段）
-└── storage/db.py        # SQLite 连接 + schema.sql
-```
-
-### 运行
-
-```bash
-source .venv/bin/activate
-export DEEPSEEK_API_KEY=sk-xxx
-# 安装 harness 运行时（mac-x64 需 npm 模式）
-bash scripts/install-dsh.sh
-export DSH_NPM_BIN="$(node -e "console.log(require('path').resolve('node_modules/@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/packaged-bin.js'))")"
-
-python -m finana.cli --once "分析600519近期走势"   # 单次分析
-python -m finana.cli                                # 交互式
-uvicorn finana.api:app --reload --port 8000         # Web API
-python scripts/smoke_e2e.py                         # 真实 E2E（缺 key 自动 SKIP）
-```
-
-### 测试
-
-```bash
-.venv/bin/python -m pytest tests/v2/ -q            # v2 现行套件（146 项）
-```
-
-### 关键约束
-
-- 所有 DeepSeek Harness 交互隔离在 `harness_adapter.py`；自动化测试用 `FakeHarness` 注入，不构造真实 harness。
-- macOS x86_64 无 runtime-bin 轮子，必须用 npm 模式（packaged-bin.js）。
-- 预测闭环：orchestrator 解析预测 → `predictions` 落库（pending）→ verifier 到期验证 → verdict 写回。
-
-## Legacy（v1）归档
-
-v1 的 `agents/`、`workflows/`、`web_ui/`、`data/`、`llm/`、`api/`、`skills/stock_data_enhanced/` 为旧版实现，保留但不再主维护。详见仓库根 `LEGACY.md`。
+- 数据层统一走 `datacore/http.py`（UA、退避重试、curl_cffi 兜底），不要各 provider 自己发请求。
+- 列表型数据（新闻等）走**多源聚合去重**，单源失败不应影响整体。
+- 报告与预测不构成投资建议。

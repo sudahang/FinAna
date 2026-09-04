@@ -1,36 +1,27 @@
-# Core dependencies
-fastapi>=0.104.0
-uvicorn>=0.24.0
-gradio>=4.0.0
+# Runtime dependencies (FinAna v2)
+
+# Web API
+fastapi>=0.110.0
+uvicorn>=0.27.0
+
+# Config & models
 pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# Data fetching
 requests>=2.31.0
+certifi>=2023.7.22
 
-# DashScope LLM API
-dashscope>=1.14.0
-
-# LangGraph for workflow orchestration
-langgraph>=1.0.0
-langchain>=1.0.0
-langchain-core>=1.0.0
-
-# Redis for caching
-redis>=5.0.0
-
-# Testing
-pytest>=7.4.0
-pytest-asyncio>=0.21.0
-httpx>=0.25.0
-
-# Utilities
-python-multipart>=0.0.6
-python-dotenv>=1.0.0
-email-validator>=2.0.0
-apscheduler>=3.10.0
-
-# v2 (DeepSeek Harness)
-pydantic-settings>=2.0
+# MCP tool server (mcp-finana)
 fastmcp>=2.0
-deepseek-harness-sdk==0.1.1rc1  # 需 --pre；runtime-bin 无 mac-x64 轮子时走 npm 模式(DSH_RUNTIME=npm)；mac-x64 需 pip install --no-deps
 
-# Optional: curl-cffi>=0.7 —— TLS 指纹反爬兜底(东财渠道)；缺失时自动降级 requests
-# curl-cffi>=0.7
+# Optional extras（缺失自动降级，不影响核心）
+#   akshare        —— K 线兜底 provider
+#   curl-cffi>=0.7 —— TLS 指纹反爬兜底（东方财富渠道）
+
+# deepseek-harness-sdk —— DeepSeek Harness 运行时，**刻意不列入上面的安装列表**。
+# 它依赖 deepseek-harness-runtime-bin==0.1.1rc1，而后者在 PyPI 上无可用发行版，
+# 直接 pip install -r requirements.txt 会解析失败（任何平台，含 CI）。按需单独装：
+#     pip install --no-deps deepseek-harness-sdk==0.1.1rc1
+# 并配合 npm 模式（DSH_RUNTIME=npm + DSH_NPM_BIN），详见 README「安装 DeepSeek Harness 运行时」。
+# 测试不需要它：所有用例通过 FakeHarness 注入，不构造真实 harness。

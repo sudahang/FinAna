@@ -1,7 +1,12 @@
 -r requirements.txt
 
 # Test and quality gates
+pytest>=7.4.0
 pytest-cov
+requests-mock>=1.12
+pyyaml>=6.0
+pandas>=2.0
+
+# Lint / typecheck（当前未作为 CI 门禁）
 ruff
 mypy
-requests-mock>=1.12

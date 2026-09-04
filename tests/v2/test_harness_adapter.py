@@ -1,5 +1,6 @@
 import logging
-from types import SimpleNamespace
+import sys
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -191,11 +192,24 @@ def test_build_driver_npm_without_bin_raises(tmp_path):
     assert "DSH_NPM_BIN" in str(excinfo.value)
 
 
-def test_build_driver_injects_research_env_and_key(tmp_path, monkeypatch):
-    import deepseek_harness
+def _harness_module(monkeypatch):
+    """返回可供 monkeypatch 的 deepseek_harness 模块对象。
 
+    本用例只校验 adapter 注入的环境变量与凭据，不应依赖真实 SDK 是否安装：
+    SDK 缺失时注入空壳模块，保证 wheel 分支在无 SDK 环境（如 CI）下同样可测。
+    """
+    try:
+        import deepseek_harness
+    except ModuleNotFoundError:
+        deepseek_harness = ModuleType("deepseek_harness")
+        monkeypatch.setitem(sys.modules, "deepseek_harness", deepseek_harness)
+    return deepseek_harness
+
+
+def test_build_driver_injects_research_env_and_key(tmp_path, monkeypatch):
     from finana.config import Settings
 
+    dsh = _harness_module(monkeypatch)
     captured = {}
 
     class _FakeHarness:
@@ -208,7 +222,7 @@ def test_build_driver_injects_research_env_and_key(tmp_path, monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setattr(deepseek_harness, "DeepSeekHarness", _FakeHarness)
+    monkeypatch.setattr(dsh, "DeepSeekHarness", _FakeHarness, raising=False)
     settings = Settings(
         finana_home=tmp_path,
         dsh_runtime="wheel",
